@@ -757,7 +757,8 @@ class StateHandler extends eventHandler {
   }
 
   isRequestMessage(message) {
-    return String(message || "").toLowerCase().includes("has requested to join the guild!");
+    const normalized = String(message || "").toLowerCase();
+    return normalized.includes("requested to join") && normalized.includes("guild");
   }
 
   isBlockedMessage(message) {
