@@ -360,9 +360,7 @@ class JoinRequestManager {
         value: `by <@${lastAcceptedDiscord.actorDiscordId}> at <t:${this.toTimestamp(lastAcceptedDiscord.timestamp)}:f>`,
         inline: false
       });
-    }
-
-    if (lastAcceptedIngame) {
+    } else if (lastAcceptedIngame) {
       baseEmbed.addFields({
         name: "Accepted In-game",
         value: `detected at <t:${this.toTimestamp(lastAcceptedIngame.timestamp)}:f>`,
@@ -553,7 +551,7 @@ class JoinRequestManager {
     }
 
     const target = this.state.requests
-      .filter((request) => request.username.toLowerCase() === username.toLowerCase() && ["pending", "accepted_discord", "expired"].includes(request.status))
+      .filter((request) => request.username.toLowerCase() === username.toLowerCase() && ["pending", "expired"].includes(request.status))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
     if (!target) {
