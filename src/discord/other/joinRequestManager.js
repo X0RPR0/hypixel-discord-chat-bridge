@@ -478,15 +478,20 @@ class JoinRequestManager {
       name: `${request.username}_Join_Request`,
       appliedTags: initialStatusTagId ? [initialStatusTagId] : [],
       message: {
-        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
-        embeds: [embed],
-        components: [this.buildModeratorActionsRow(request)]
+        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n")
       }
     });
 
-    await thread.send(skycryptLink).catch(() => {});
+    const requestMessage = await thread
+      .send({
+        embeds: [embed],
+        components: [this.buildModeratorActionsRow(request)]
+      })
+      .catch(() => null);
 
-    const starterMessage = await thread.fetchStarterMessage().catch(() => null);
+    await thread.send(`<${skycryptLink}>`).catch(() => {});
+
+    const starterMessage = requestMessage || (await thread.fetchStarterMessage().catch(() => null));
     request.threadId = thread.id;
     request.messageId = starterMessage?.id ?? null;
     if (starterMessage) {
