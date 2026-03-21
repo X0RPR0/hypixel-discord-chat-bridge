@@ -73,9 +73,12 @@ class StateHandler extends eventHandler {
 
     if (this.isRequestMessage(message)) {
       const username = replaceAllRanks(message.split("has")[0].replaceAll("-----------------------------------------------------\n", ""));
-      const uuid = await getUUID(username);
-      if (config.minecraft.guildRequirements.enabled) {
-        const playerInfo = await checkRequirements(uuid);
+      const uuid = await getUUID(username).catch(() => null);
+      if (uuid && config.minecraft.guildRequirements.enabled) {
+        const playerInfo = await checkRequirements(uuid).catch(() => null);
+        if (!playerInfo) {
+          return;
+        }
 
         bot.chat(
           `/oc ${playerInfo.nickname} ${playerInfo.meetRequirements ? "meets" : "Doesn't meet"} Requirements. [BW] [${
@@ -90,11 +93,17 @@ class StateHandler extends eventHandler {
           bot.chat(`/guild accept ${username}`);
         }
 
-        const statsEmbed = generateEmbed(playerInfo);
-        const acceptButton = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("joinRequestAccept").setLabel("Accept Request").setStyle(ButtonStyle.Success)
-        );
-        await client.channels.cache.get(`${config.discord.channels.loggingChannel}`).send({ embeds: [statsEmbed], components: [acceptButton] });
+        if (config.discord.joinRequests?.enabled) {
+          await this.discord.joinRequestManager.onIngameRequest(username).catch(console.error);
+        } else {
+          const statsEmbed = generateEmbed(playerInfo);
+          const acceptButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("joinRequestAccept").setLabel("Accept Request").setStyle(ButtonStyle.Success)
+          );
+          await client.channels.cache.get(`${config.discord.channels.loggingChannel}`).send({ embeds: [statsEmbed], components: [acceptButton] });
+        }
+      } else if (config.discord.joinRequests?.enabled) {
+        await this.discord.joinRequestManager.onIngameRequest(username).catch(console.error);
       }
     }
 
@@ -126,6 +135,7 @@ class StateHandler extends eventHandler {
 
     if (this.isJoinMessage(message)) {
       const username = this.getUsernameFromEventMessage(message);
+      await this.discord.joinRequestManager.onIngameAccepted(username).catch(() => {});
       setTimeout(() => this.tryToUpdateUser(username), 15000);
 
       await delay(1000);

@@ -93,6 +93,24 @@
       "filterWords": ["dox", "doxx", "doxed", "doxxed", "doxing", "doxxing", "doxes", "doxxes"],
       "joinMessage": true,
       "autoLimbo": false
+    },
+    "joinRequests": {
+      "enabled": false,
+      "forumChannelId": "FORUM_CHANNEL_ID",
+      "moderatorRoleIds": ["JOIN_REQUEST_MOD_ROLE_ID"],
+      "statusTagIds": {
+        "pending": "",
+        "accepted_discord": "",
+        "accepted_ingame": "",
+        "denied": "",
+        "expired": ""
+      },
+      "requestTimeoutMinutes": 5,
+      "mentionOnCreate": "@here",
+      "trackIngameAcceptance": true,
+      "allowDiscordSelfRequest": true,
+      "requestEntryChannelId": "JOIN_REQUEST_ENTRY_CHANNEL_ID",
+      "requestEntryMessageId": ""
     }
   },
   "web": {

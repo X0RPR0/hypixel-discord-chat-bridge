@@ -5,6 +5,7 @@ const messageToImage = require("../contracts/messageToImage.js");
 const MessageHandler = require("./handlers/MessageHandler.js");
 const StateHandler = require("./handlers/StateHandler.js");
 const CommandHandler = require("./CommandHandler.js");
+const { JoinRequestManager } = require("./other/joinRequestManager.js");
 const config = require("../../config.json");
 const fs = require("fs");
 const { ErrorEmbed } = require("../contracts/embedHandler.js");
@@ -18,6 +19,7 @@ class DiscordManager extends CommunicationBridge {
     this.stateHandler = new StateHandler(this);
     this.messageHandler = new MessageHandler(this);
     this.commandHandler = new CommandHandler(this);
+    this.joinRequestManager = new JoinRequestManager(this);
   }
 
   connect() {
@@ -26,6 +28,7 @@ class DiscordManager extends CommunicationBridge {
     });
 
     this.client = client;
+    this.client.joinRequestManager = this.joinRequestManager;
     this.commandHandler.loadCommands();
 
     this.client.on(Events.ClientReady, () => this.stateHandler.onReady());

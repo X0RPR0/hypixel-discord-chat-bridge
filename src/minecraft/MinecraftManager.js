@@ -20,7 +20,7 @@ class MinecraftManager extends CommunicationBridge {
 
     this.stateHandler = new StateHandler(this);
     this.errorHandler = new ErrorHandler(this);
-    this.chatHandler = new ChatHandler(this, new CommandHandler(this));
+    this.chatHandler = new ChatHandler(this, new CommandHandler(this), this.app.discord);
   }
 
   connect() {

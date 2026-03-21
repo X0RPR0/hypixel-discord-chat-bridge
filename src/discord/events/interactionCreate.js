@@ -1,8 +1,9 @@
 const { isLinkedMember, isGuildMember, isVerifiedMember } = require("../../contracts/verificaiton.js");
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
+const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_MODAL_ID } = require("../other/joinRequestManager.js");
 // eslint-disable-next-line no-unused-vars
-const { CommandInteraction, MessageFlags, Events } = require("discord.js");
+const { CommandInteraction, Events } = require("discord.js");
 const config = require("../../../config.json");
 
 module.exports = {
@@ -55,14 +56,35 @@ module.exports = {
 
         await command.execute(interaction);
       } else if (interaction.isButton()) {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
-        if (interaction.customId !== "joinRequestAccept") return;
-        const username = interaction?.message?.embeds?.[0]?.title.split(" ")?.[0] || undefined;
-        if (!username) throw new HypixelDiscordChatBridgeError("Something is missing");
-        bot.chat(`/g accept ${username}`);
-        const embed = new SuccessEmbed(`Successfully accepted **${username}** into the guild.`);
+        if (interaction.customId === PANEL_BUTTON_ID) {
+          return interaction.client.joinRequestManager.handleCreateButton(interaction);
+        }
 
-        await interaction.followUp({ embeds: [embed] });
+        if (JoinRequestManager.isJoinRequestComponent(interaction.customId)) {
+          const parsed = JoinRequestManager.parseActionCustomId(interaction.customId);
+          if (!parsed) {
+            return interaction.reply({ content: "Invalid join request action.", ephemeral: true });
+          }
+
+          return interaction.client.joinRequestManager.handleModeratorAction({
+            action: parsed.action,
+            requestId: parsed.requestId,
+            interaction
+          });
+        }
+
+        if (interaction.customId === "joinRequestAccept") {
+          await interaction.deferReply({ ephemeral: true }).catch(() => {});
+          const username = interaction?.message?.embeds?.[0]?.title.split(" ")?.[0] || undefined;
+          if (!username) throw new HypixelDiscordChatBridgeError("Something is missing");
+          bot.chat(`/g accept ${username}`);
+          const embed = new SuccessEmbed(`Successfully accepted **${username}** into the guild.`);
+          await interaction.followUp({ embeds: [embed], ephemeral: true });
+        }
+      } else if (interaction.isModalSubmit()) {
+        if (interaction.customId === PANEL_MODAL_ID) {
+          return interaction.client.joinRequestManager.handleCreateModal(interaction);
+        }
       }
     } catch (error) {
       console.error(error);
@@ -77,7 +99,7 @@ module.exports = {
 
       if (error instanceof HypixelDiscordChatBridgeError === false) {
         const username = interaction.user.username ?? interaction.user.tag ?? "Unknown";
-        const commandOptions = JSON.stringify(interaction.options.data) ?? "Unknown";
+        const commandOptions = JSON.stringify(interaction.options?.data ?? []) ?? "Unknown";
         const commandName = interaction.commandName ?? "Unknown";
         const errorStack = error.stack ?? error ?? "Unknown";
         const userID = interaction.user.id ?? "Unknown";
