@@ -757,7 +757,7 @@ class StateHandler extends eventHandler {
   }
 
   isRequestMessage(message) {
-    return message.includes("has requested to join the Guild!");
+    return String(message || "").toLowerCase().includes("has requested to join the guild!");
   }
 
   isBlockedMessage(message) {

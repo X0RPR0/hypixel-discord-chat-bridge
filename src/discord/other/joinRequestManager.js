@@ -290,11 +290,6 @@ class JoinRequestManager {
           name: "Accept Timeout",
           value: `<t:${this.toTimestamp(request.expiresAt)}:R> (<t:${this.toTimestamp(request.expiresAt)}:f>)`,
           inline: false
-        },
-        {
-          name: "SkyCrypt",
-          value: `[Open Profile](https://sky.shiiyu.moe/stats/${encodeURIComponent(request.username)})`,
-          inline: false
         }
       )
       .setFooter({ text: `Request ID: ${request.requestId}` })
@@ -411,11 +406,13 @@ class JoinRequestManager {
       name: `${request.username}_Join_Request`,
       appliedTags: initialStatusTagId ? [initialStatusTagId] : [],
       message: {
-        content: [mentionText, `Guild join request for **${request.username}**`, skycryptLink].filter(Boolean).join("\n"),
+        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
         embeds: [embed],
         components: [this.buildModeratorActionsRow(request, false)]
       }
     });
+
+    await thread.send(skycryptLink).catch(() => {});
 
     const starterMessage = await thread.fetchStarterMessage().catch(() => null);
     request.threadId = thread.id;
