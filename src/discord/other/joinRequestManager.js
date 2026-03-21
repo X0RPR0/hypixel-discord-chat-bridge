@@ -165,6 +165,48 @@ class JoinRequestManager {
     return ["pending", "accepted_discord", "expired"].includes(status);
   }
 
+  getStatusReactionEmoji(status) {
+    switch (status) {
+      case "pending":
+      case "expired":
+        return "⚠️";
+      case "denied":
+        return "❌";
+      case "accepted_discord":
+      case "accepted_ingame":
+        return "✅";
+      default:
+        return null;
+    }
+  }
+
+  async syncStatusReaction(request, message) {
+    if (!message || !this.discord?.client?.user?.id) {
+      return;
+    }
+
+    const botUserId = this.discord.client.user.id;
+    const managedEmojis = ["⚠️", "❌", "✅"];
+    const desiredEmoji = this.getStatusReactionEmoji(request?.status);
+
+    for (const emoji of managedEmojis) {
+      if (emoji === desiredEmoji) continue;
+      const reaction = message.reactions?.cache?.get(emoji);
+      if (reaction) {
+        await reaction.users.remove(botUserId).catch(() => {});
+      }
+    }
+
+    if (!desiredEmoji) {
+      return;
+    }
+
+    const desiredReaction = message.reactions?.cache?.get(desiredEmoji);
+    if (!desiredReaction?.users?.cache?.has(botUserId)) {
+      await message.react(desiredEmoji).catch(() => {});
+    }
+  }
+
   canModerate(member) {
     const roles = config.discord.joinRequests?.moderatorRoleIds ?? [];
     if (!Array.isArray(roles) || roles.length === 0) {
@@ -417,6 +459,9 @@ class JoinRequestManager {
     const starterMessage = await thread.fetchStarterMessage().catch(() => null);
     request.threadId = thread.id;
     request.messageId = starterMessage?.id ?? null;
+    if (starterMessage) {
+      await this.syncStatusReaction(request, starterMessage);
+    }
 
     this.state.requests.push(request);
     this.saveState();
@@ -445,6 +490,7 @@ class JoinRequestManager {
       embeds: [embed],
       components: [this.buildModeratorActionsRow(request, isDisabled)]
     });
+    await this.syncStatusReaction(request, message);
     await this.syncThreadStatusTag(request, thread);
   }
 
