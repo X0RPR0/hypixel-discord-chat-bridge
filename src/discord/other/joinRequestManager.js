@@ -243,8 +243,15 @@ class JoinRequestManager {
       return fromSnapshot;
     }
 
+    const withTimeout = (promise, ms = 2000) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => setTimeout(() => resolve(null), ms))
+      ]);
+
     try {
-      const latest = await getLatestProfile(request?.uuid || request?.username);
+      const latest = await withTimeout(getLatestProfile(request?.uuid || request?.username), 2000);
+      if (!latest) return fromSnapshot;
       const profileName = latest?.profileData?.cute_name || "";
       return this.buildSkyCryptLink(request, profileName);
     } catch {
