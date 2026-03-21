@@ -106,9 +106,7 @@ function generateEmbed(data) {
     )
     .setThumbnail(`https://www.mc-heads.net/avatar/${data.nickname}`)
     .setFooter({
-      text: `by @duckysolucky | /help [command] for more information`,
-      iconURL: "https://imgur.com/tgwQJTX.png"
-    });
+      text: `/help [command] for more information`,});
 }
 
 module.exports = {

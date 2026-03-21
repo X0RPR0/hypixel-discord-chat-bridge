@@ -30,9 +30,7 @@ module.exports = {
       writeFileSync("data/linked.json", JSON.stringify(linked, null, 2));
 
       const updateRole = new SuccessEmbed(`You have successfully unlinked \`${await getUsername(uuid)}\`. Run \`/verify\` to link a new account.`, {
-        text: `by @.kathund | /help [command] for more information`,
-        iconURL: "https://i.imgur.com/uUuZx2E.png"
-      });
+        text: `/help [command] for more information`,});
       await interaction.followUp({ embeds: [updateRole] });
       const updateRolesCommand = require("./updateCommand.js");
       if (updateRolesCommand === undefined) {
@@ -42,9 +40,7 @@ module.exports = {
       await updateRolesCommand.execute(interaction, undefined, true);
     } catch (error) {
       const errorEmbed = new ErrorEmbed(`\`\`\`${error}\`\`\``).setFooter({
-        text: `by @.kathund | /help [command] for more information`,
-        iconURL: "https://i.imgur.com/uUuZx2E.png"
-      });
+        text: `/help [command] for more information`,});
 
       await interaction.editReply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
     }

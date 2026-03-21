@@ -9,7 +9,7 @@ class DuckCommand extends minecraftCommand {
     super(minecraft);
 
     this.name = "duck";
-    this.aliases = ["ducky", "ducks", "duckysougly", "duckysolucky"];
+    this.aliases = ["ducky", "ducks", "duckysougly"];
     this.description = "Random image of a ducks.";
     this.options = [];
   }

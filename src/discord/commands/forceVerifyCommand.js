@@ -44,9 +44,7 @@ module.exports = {
       writeFileSync("data/linked.json", JSON.stringify(linked, null, 2));
 
       const embed = new SuccessEmbed(`<@${discordId}>'s account has been successfully linked to \`${nickname}\``).setAuthor({ name: "Successfully linked!" }).setFooter({
-        text: `by @.kathund | /help [command] for more information`,
-        iconURL: "https://i.imgur.com/uUuZx2E.png"
-      });
+        text: `/help [command] for more information`,});
 
       await interaction.editReply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 
@@ -57,9 +55,7 @@ module.exports = {
       error = formatError(error);
 
       const errorEmbed = new ErrorEmbed(`\`\`\`${error}\`\`\``).setFooter({
-        text: `by @.kathund | /help [command] for more information`,
-        iconURL: "https://i.imgur.com/uUuZx2E.png"
-      });
+        text: `/help [command] for more information`,});
 
       await interaction.editReply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       if (error.includes("Please follow the instructions below.")) {
@@ -70,9 +66,7 @@ module.exports = {
           )
           .setImage("https://media.discordapp.net/attachments/922202066653417512/1066476136953036800/tutorial.gif")
           .setFooter({
-            text: `by @.kathund | /help [command] for more information`,
-            iconURL: "https://i.imgur.com/uUuZx2E.png"
-          });
+            text: `/help [command] for more information`,});
 
         await interaction.followUp({ embeds: [verificationTutorialEmbed], flags: MessageFlags.Ephemeral });
       }

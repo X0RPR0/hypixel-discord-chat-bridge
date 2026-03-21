@@ -8,7 +8,7 @@ class StateHandler {
   async onReady() {
     console.discord("Client ready, logged in as " + this.discord.client.user.tag);
     this.discord.client.user.setPresence({
-      activities: [{ name: `/help | by @duckysolucky` }]
+      activities: [{ name: `/help` }]
     });
 
     global.guild = await client.guilds.fetch(config.discord.bot.serverID);

@@ -12,9 +12,7 @@ class Embed extends EmbedBuilder {
 
     this.setColor(3447003);
     this.setFooter({
-      text: `by @duckysolucky | /help [command] for more information`,
-      iconURL: "https://imgur.com/tgwQJTX.png"
-    });
+      text: `/help [command] for more information`,});
   }
 }
 
@@ -33,9 +31,7 @@ class ErrorEmbed extends Embed {
     this.setAuthor({ name: "An Error has occurred" });
     this.setColor(15548997);
     this.setFooter({
-      text: `by @duckysolucky | /help [command] for more information`,
-      iconURL: "https://imgur.com/tgwQJTX.png"
-    });
+      text: `/help [command] for more information`,});
 
     this.setDescription(description);
   }
@@ -56,9 +52,7 @@ class SuccessEmbed extends Embed {
     this.setAuthor({ name: "Success" });
     this.setColor(5763719);
     this.setFooter({
-      text: `by @duckysolucky | /help [command] for more information`,
-      iconURL: "https://imgur.com/tgwQJTX.png"
-    });
+      text: `/help [command] for more information`,});
 
     this.setDescription(description);
   }

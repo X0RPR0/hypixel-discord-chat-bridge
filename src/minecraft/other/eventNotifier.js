@@ -24,6 +24,7 @@ if (config.minecraft.skyblockEventsNotifications.enabled) {
         }
 
         const minutes = Math.floor((eventData.events[0].start_timestamp - Date.now()) / 1000 / 60);
+        const cycleId = String(eventData.events[0].start_timestamp).slice(-5);
 
         let extraInfo = "";
         if (event == "JACOBS_CONTEST") {
@@ -37,12 +38,12 @@ if (config.minecraft.skyblockEventsNotifications.enabled) {
 
         const cTime = getCustomTime(customTime, event);
         if (cTime.length !== 0 && cTime.includes(minutes.toString())) {
-          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo}: Starting in ${minutes}m!`);
+          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} starts in ${minutes}m (cycle ${cycleId})`);
           await delay(1500);
         }
 
         if (minutes == 0) {
-          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo}: Starting now!`);
+          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} is live now (cycle ${cycleId})`);
           await delay(1500);
         }
       }
