@@ -141,19 +141,25 @@ class JoinRequestManager {
     return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(PANEL_BUTTON_ID).setLabel("Request to Join").setStyle(ButtonStyle.Primary));
   }
 
-  buildModeratorActionsRow(request, disabled = false) {
+  buildModeratorActionsRow(request) {
+    const isTerminal = this.isTerminalStatus(request?.status);
+    const isExpired = request?.status === "expired";
+    const reinviteDisabled = isTerminal || !isExpired;
+    const acceptDisabled = isTerminal || isExpired;
+    const denyDisabled = isTerminal;
+
     return new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`joinreq:reinvite:${request.requestId}`)
         .setLabel("Reinvite")
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled),
+        .setDisabled(reinviteDisabled),
       new ButtonBuilder()
         .setCustomId(`joinreq:accept:${request.requestId}`)
         .setLabel("Accept")
         .setStyle(ButtonStyle.Success)
-        .setDisabled(disabled),
-      new ButtonBuilder().setCustomId(`joinreq:deny:${request.requestId}`).setLabel("Deny").setStyle(ButtonStyle.Danger).setDisabled(disabled)
+        .setDisabled(acceptDisabled),
+      new ButtonBuilder().setCustomId(`joinreq:deny:${request.requestId}`).setLabel("Deny").setStyle(ButtonStyle.Danger).setDisabled(denyDisabled)
     );
   }
 
@@ -457,7 +463,7 @@ class JoinRequestManager {
       message: {
         content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
         embeds: [embed],
-        components: [this.buildModeratorActionsRow(request, false)]
+        components: [this.buildModeratorActionsRow(request)]
       }
     });
 
@@ -491,11 +497,10 @@ class JoinRequestManager {
       return;
     }
 
-    const isDisabled = this.isTerminalStatus(request.status);
     const embed = await this.buildRequestEmbed(request);
     await message.edit({
       embeds: [embed],
-      components: [this.buildModeratorActionsRow(request, isDisabled)]
+      components: [this.buildModeratorActionsRow(request)]
     });
     await this.syncStatusReaction(request, message);
     await this.syncThreadStatusTag(request, thread);
@@ -645,6 +650,9 @@ class JoinRequestManager {
     }
 
     if (action === "accept") {
+      if (request.status === "expired") {
+        return interaction.reply({ content: "This request timed out. Reinvite first, then accept.", ephemeral: true });
+      }
       bot.chat(`/g accept ${request.username}`);
       request.status = "accepted_discord";
       request.actions.push({
@@ -674,6 +682,9 @@ class JoinRequestManager {
     }
 
     if (action === "reinvite") {
+      if (request.status !== "expired") {
+        return interaction.reply({ content: "Reinvite is only available after timeout.", ephemeral: true });
+      }
       bot.chat(`/g invite ${request.username}`);
       request.reinviteCount += 1;
       request.expiresAt = this.getExpiryDate();
