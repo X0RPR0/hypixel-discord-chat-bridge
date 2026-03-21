@@ -52,6 +52,7 @@ async function checkRequirements(uuid) {
     meetRequirements,
     level: player.level,
     nickname: player.nickname,
+    skyblockProfile: profile.profileData?.cute_name || "",
     skyblockLevel: skyblockLevel.toLocaleString(),
     bwLevel: bwLevel.toLocaleString(),
     bwFKDR: bwFKDR.toLocaleString(),

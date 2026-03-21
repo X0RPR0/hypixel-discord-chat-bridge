@@ -221,6 +221,15 @@ class JoinRequestManager {
     return String(username || "").trim();
   }
 
+  buildSkyCryptLink(request) {
+    const username = encodeURIComponent(request?.username || "");
+    const profileName = encodeURIComponent(request?.requirementsSnapshot?.skyblockProfile || "");
+    if (profileName) {
+      return `https://sky.shiiyu.moe/stats/${username}/${profileName}`;
+    }
+    return `https://sky.shiiyu.moe/stats/${username}`;
+  }
+
   getRequestById(requestId) {
     return this.state.requests.find((request) => request.requestId === requestId);
   }
@@ -442,7 +451,7 @@ class JoinRequestManager {
 
     const embed = await this.buildRequestEmbed(request);
     const mentionText = config.discord.joinRequests?.mentionOnCreate || "";
-    const skycryptLink = `https://sky.shiiyu.moe/stats/${encodeURIComponent(request.username)}`;
+    const skycryptLink = this.buildSkyCryptLink(request);
     const initialStatusTagId = this.resolveStatusTagId(request.status, forum);
     const thread = await forum.threads.create({
       name: `${request.username}_Join_Request`,
