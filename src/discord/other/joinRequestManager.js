@@ -11,6 +11,7 @@ const {
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
 const { checkRequirements } = require("../commands/requirementsCommand.js");
+const { getLatestProfile } = require("../../../API/functions/getLatestProfile.js");
 const config = require("../../../config.json");
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
@@ -227,13 +228,28 @@ class JoinRequestManager {
     return String(username || "").trim();
   }
 
-  buildSkyCryptLink(request) {
+  buildSkyCryptLink(request, profileName = "") {
     const username = encodeURIComponent(request?.username || "");
-    const profileName = encodeURIComponent(request?.requirementsSnapshot?.skyblockProfile || "");
-    if (profileName) {
-      return `https://sky.shiiyu.moe/stats/${username}/${profileName}`;
+    const preferredProfile = String(profileName || request?.requirementsSnapshot?.skyblockProfile || "").trim();
+    if (preferredProfile) {
+      return `https://sky.shiiyu.moe/stats/${username}/${encodeURIComponent(preferredProfile)}`;
     }
     return `https://sky.shiiyu.moe/stats/${username}`;
+  }
+
+  async resolveSkyCryptLink(request) {
+    const fromSnapshot = this.buildSkyCryptLink(request);
+    if (String(request?.requirementsSnapshot?.skyblockProfile || "").trim()) {
+      return fromSnapshot;
+    }
+
+    try {
+      const latest = await getLatestProfile(request?.uuid || request?.username);
+      const profileName = latest?.profileData?.cute_name || "";
+      return this.buildSkyCryptLink(request, profileName);
+    } catch {
+      return fromSnapshot;
+    }
   }
 
   getRequestById(requestId) {
@@ -455,7 +471,8 @@ class JoinRequestManager {
 
     const embed = await this.buildRequestEmbed(request);
     const mentionText = config.discord.joinRequests?.mentionOnCreate || "";
-    const skycryptLink = this.buildSkyCryptLink(request);
+    const skycryptLink = await this.resolveSkyCryptLink(request);
+    request.skycryptLink = skycryptLink;
     const initialStatusTagId = this.resolveStatusTagId(request.status, forum);
     const thread = await forum.threads.create({
       name: `${request.username}_Join_Request`,
