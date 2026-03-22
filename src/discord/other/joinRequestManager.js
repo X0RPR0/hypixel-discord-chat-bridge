@@ -658,7 +658,28 @@ class JoinRequestManager {
 
     const existing = this.getActiveRequestByUsername(normalizedUsername);
     if (existing) {
-      return { request: existing, created: false };
+      const existingThread = existing?.threadId
+        ? await this.discord.client.channels.fetch(existing.threadId).catch(() => null)
+        : null;
+      const existingMessage = existingThread?.isThread?.() && existing?.messageId
+        ? await existingThread.messages.fetch(existing.messageId).catch(() => null)
+        : null;
+
+      if (existingThread && existingMessage) {
+        return { request: existing, created: false };
+      }
+
+      // Old active requests can become orphaned when the forum thread or starter message is deleted.
+      // Convert them to expired so users can create a new request cleanly.
+      existing.status = "expired";
+      existing.actions.push({
+        action: "orphaned_cleanup",
+        actorDiscordId: null,
+        actorTag: "system",
+        timestamp: new Date().toISOString(),
+        note: "Previous active request thread/message no longer exists"
+      });
+      this.saveState();
     }
 
     const forumChannelId = config.discord.joinRequests?.forumChannelId;
