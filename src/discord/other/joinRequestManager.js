@@ -1,13 +1,4 @@
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelType,
-  EmbedBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
-} = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
@@ -181,16 +172,8 @@ class JoinRequestManager {
     const denyDisabled = isTerminal;
 
     return new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`joinreq:reinvite:${request.requestId}`)
-        .setLabel("Reinvite")
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(reinviteDisabled),
-      new ButtonBuilder()
-        .setCustomId(`joinreq:accept:${request.requestId}`)
-        .setLabel("Accept")
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(acceptDisabled),
+      new ButtonBuilder().setCustomId(`joinreq:reinvite:${request.requestId}`).setLabel("Reinvite").setStyle(ButtonStyle.Primary).setDisabled(reinviteDisabled),
+      new ButtonBuilder().setCustomId(`joinreq:accept:${request.requestId}`).setLabel("Accept").setStyle(ButtonStyle.Success).setDisabled(acceptDisabled),
       new ButtonBuilder().setCustomId(`joinreq:deny:${request.requestId}`).setLabel("Deny").setStyle(ButtonStyle.Danger).setDisabled(denyDisabled)
     );
   }

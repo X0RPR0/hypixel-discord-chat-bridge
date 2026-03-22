@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { describe, it, expect, beforeAll, afterAll, beforeEach } = require("@jest/globals");
+const { describe, it, expect, beforeAll, afterAll, beforeEach, jest: jestGlobals } = require("@jest/globals");
 
 const configPath = path.resolve(process.cwd(), "config.json");
 let originalConfig = null;
@@ -49,15 +49,15 @@ describe("JoinRequestManager", () => {
   let manager;
 
   beforeAll(() => {
-    jest.resetModules();
+    jestGlobals.resetModules();
     JoinRequestManager = require("../src/discord/other/joinRequestManager.js").JoinRequestManager;
   });
 
   beforeEach(() => {
     manager = new JoinRequestManager({ client: {} });
-    manager.saveState = jest.fn();
-    manager.updateRequestMessage = jest.fn(async () => {});
-    global.bot = { chat: jest.fn() };
+    manager.saveState = jestGlobals.fn();
+    manager.updateRequestMessage = jestGlobals.fn(async () => {});
+    global.bot = { chat: jestGlobals.fn() };
   });
 
   it("parses join request action custom IDs", () => {
@@ -114,7 +114,7 @@ describe("JoinRequestManager", () => {
     const interaction = {
       member: { roles: { cache: [{ id: "mod-role" }] } },
       user: { id: "123", tag: "Mod#0001" },
-      reply: jest.fn(async () => {})
+      reply: jestGlobals.fn(async () => {})
     };
 
     await manager.handleModeratorAction({ action: "accept", requestId: "req-1", interaction });
@@ -141,7 +141,7 @@ describe("JoinRequestManager", () => {
     const interaction = {
       member: { roles: { cache: [{ id: "mod-role" }] } },
       user: { id: "999", tag: "Staff#0001" },
-      reply: jest.fn(async () => {})
+      reply: jestGlobals.fn(async () => {})
     };
 
     await manager.handleModeratorAction({ action: "reinvite", requestId: "req-2", interaction });
