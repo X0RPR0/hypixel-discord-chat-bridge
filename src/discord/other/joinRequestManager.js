@@ -10,8 +10,16 @@ const {
 } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
+const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { checkRequirements } = require("../commands/requirementsCommand.js");
 const { getLatestProfile } = require("../../../API/functions/getLatestProfile.js");
+const { getSkillAverage } = require("../../../API/constants/skills.js");
+const { getAccessories } = require("../../../API/stats/accessories.js");
+const { getDungeons } = require("../../../API/stats/dungeons.js");
+const { getPersonalBest } = require("../../../API/stats/dungeonsPersonalBest.js");
+const { getSlayer } = require("../../../API/stats/slayer.js");
+const { ProfileNetworthCalculator } = require("skyhelper-networth");
+const { formatNumber } = require("../../contracts/helperFunctions.js");
 const config = require("../../../config.json");
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
@@ -164,6 +172,25 @@ class JoinRequestManager {
     );
   }
 
+  buildSkyCryptButtonRow(request) {
+    const enabled = config.discord.joinRequests?.showSkyCryptButton !== false;
+    if (!enabled) return null;
+
+    const link = String(request?.skycryptLink || "").trim() || this.buildSkyCryptLink(request);
+    if (!link) return null;
+
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Open SkyCrypt").setURL(link)
+    );
+  }
+
+  buildRequestComponents(request) {
+    const rows = [this.buildModeratorActionsRow(request)];
+    const skyCryptRow = this.buildSkyCryptButtonRow(request);
+    if (skyCryptRow) rows.push(skyCryptRow);
+    return rows;
+  }
+
   isTerminalStatus(status) {
     return ["denied", "accepted_ingame"].includes(status);
   }
@@ -230,7 +257,9 @@ class JoinRequestManager {
 
   buildSkyCryptLink(request, profileName = "") {
     const username = encodeURIComponent(request?.username || "");
-    const preferredProfile = String(profileName || request?.requirementsSnapshot?.skyblockProfile || "").trim();
+    const preferredProfile = String(
+      profileName || request?.skyblockSnapshot?.profileName || request?.requirementsSnapshot?.skyblockProfile || ""
+    ).trim();
     if (preferredProfile) {
       return `https://sky.shiiyu.moe/stats/${username}/${encodeURIComponent(preferredProfile)}`;
     }
@@ -239,18 +268,18 @@ class JoinRequestManager {
 
   async resolveSkyCryptLink(request) {
     const fromSnapshot = this.buildSkyCryptLink(request);
-    if (String(request?.requirementsSnapshot?.skyblockProfile || "").trim()) {
+    if (String(request?.skyblockSnapshot?.profileName || request?.requirementsSnapshot?.skyblockProfile || "").trim()) {
       return fromSnapshot;
     }
 
-    const withTimeout = (promise, ms = 2000) =>
+    const withTimeout = (promise, ms = 8000) =>
       Promise.race([
         promise,
         new Promise((resolve) => setTimeout(() => resolve(null), ms))
       ]);
 
     try {
-      const latest = await withTimeout(getLatestProfile(request?.uuid || request?.username), 2000);
+      const latest = await withTimeout(getLatestProfile(request?.uuid || request?.username), 8000);
       if (!latest) return fromSnapshot;
       const profileName = latest?.profileData?.cute_name || "";
       return this.buildSkyCryptLink(request, profileName);
@@ -263,9 +292,172 @@ class JoinRequestManager {
     return this.state.requests.find((request) => request.requestId === requestId);
   }
 
+  async getGuildByPlayer(player) {
+    const identifier = String(player || "").trim();
+    if (!identifier) return null;
+
+    const withTimeout = (promise, ms = 8000) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => setTimeout(() => resolve(null), ms))
+      ]);
+
+    try {
+      return await withTimeout(hypixel.getGuild("player", identifier, { noCaching: true, noCacheCheck: true }), 8000);
+    } catch {
+      return null;
+    }
+  }
+
+  areSameGuild(a, b) {
+    if (!a || !b) return false;
+    const aId = String(a.id || "").trim();
+    const bId = String(b.id || "").trim();
+    if (aId && bId && aId === bId) return true;
+
+    const aName = String(a.name || "").trim().toLowerCase();
+    const bName = String(b.name || "").trim().toLowerCase();
+    return Boolean(aName && bName && aName === bName);
+  }
+
+  buildSlayerSummary(slayer) {
+    if (!slayer) return "N/A";
+    return [
+      `Z:${slayer?.zombie?.level ?? 0}`,
+      `S:${slayer?.spider?.level ?? 0}`,
+      `W:${slayer?.wolf?.level ?? 0}`,
+      `E:${slayer?.enderman?.level ?? 0}`,
+      `B:${slayer?.blaze?.level ?? 0}`,
+      `V:${slayer?.vampire?.level ?? 0}`
+    ].join(" | ");
+  }
+
+  formatDungeonTime(timeMs) {
+    const value = Number(timeMs || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+      return "N/A";
+    }
+
+    const totalSeconds = Math.floor(value / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const centiseconds = Math.floor((value % 1000) / 10);
+
+    if (minutes > 0) {
+      return `${minutes}:${String(seconds).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+    }
+    return `${seconds}.${String(centiseconds).padStart(2, "0")}s`;
+  }
+
+  readFloorProgress(memberDungeonsType) {
+    const type = memberDungeonsType || {};
+    const highestTier = Number(type?.highest_tier_completed);
+    if (Number.isFinite(highestTier) && highestTier >= 0) {
+      return highestTier;
+    }
+
+    const played = type?.times_played || {};
+    const candidates = Object.keys(played)
+      .filter((key) => key !== "best" && key !== "total")
+      .map((key) => Number(key))
+      .filter((value) => Number.isFinite(value));
+
+    if (!candidates.length) {
+      return null;
+    }
+
+    return Math.max(...candidates);
+  }
+
+  async fetchSkyblockSnapshot(uuidOrUsername) {
+    try {
+      const { profile, profileData, museum } = await getLatestProfile(uuidOrUsername, { museum: true });
+      const bankingBalance = profileData?.banking?.balance ?? 0;
+      let networth = null;
+      try {
+        const networthManager = new ProfileNetworthCalculator(profile, museum, bankingBalance);
+        networth = await networthManager.getNetworth({ onlyNetworth: true }).catch(() => null);
+      } catch {
+        networth = null;
+      }
+
+      const dungeons = (() => {
+        try {
+          return getDungeons(profile);
+        } catch {
+          return null;
+        }
+      })();
+
+      const slayer = (() => {
+        try {
+          return getSlayer(profile);
+        } catch {
+          return null;
+        }
+      })();
+
+      const accessories = await getAccessories(profile).catch(() => null);
+      const personalBest = (() => {
+        try {
+          return getPersonalBest(profile);
+        } catch {
+          return null;
+        }
+      })();
+
+      const skillAverage = (() => {
+        try {
+          return getSkillAverage(profile, null);
+        } catch {
+          return null;
+        }
+      })();
+
+      const dungeonTypes = profile?.dungeons?.dungeon_types || {};
+      const highestNormalFloor = this.readFloorProgress(dungeonTypes.catacombs);
+      const highestMasterFloor = this.readFloorProgress(dungeonTypes.master_catacombs);
+      const f7 = personalBest?.normal?.floor_7 || null;
+      const m7 = personalBest?.master?.floor_7 || null;
+
+      return {
+        profileName: profileData?.cute_name || "",
+        skyblockLevel: Number((profile?.leveling?.experience || 0) / 100),
+        skillAverage: skillAverage || null,
+        networth: networth?.networth ?? 0,
+        purse: networth?.purse ?? 0,
+        bank: profileData?.banking?.balance ?? 0,
+        cata: dungeons?.dungeons?.levelWithProgress ?? dungeons?.dungeons?.level ?? 0,
+        classAverage: dungeons?.classAverage ?? 0,
+        slayerSummary: this.buildSlayerSummary(slayer),
+        magicalPower: accessories?.magicalPower ?? 0,
+        highestNormalFloor,
+        highestMasterFloor,
+        f7BestTime: f7?.fastest_s_plus ?? f7?.fastest_s ?? f7?.fastest ?? null,
+        m7BestTime: m7?.fastest_s_plus ?? m7?.fastest_s ?? m7?.fastest ?? null
+      };
+    } catch {
+      return null;
+    }
+  }
+
   getActiveRequestByUsername(username) {
     const normalized = this.normalizeUsername(username).toLowerCase();
-    return this.state.requests.find((request) => request.username.toLowerCase() === normalized && this.isActiveStatus(request.status));
+    const now = Date.now();
+    return this.state.requests.find((request) => {
+      if (request.username.toLowerCase() !== normalized) return false;
+      if (!this.isActiveStatus(request.status)) return false;
+
+      // accepted_discord should only block duplicates while still within timeout window
+      if (request.status === "accepted_discord") {
+        const expiresAt = new Date(request.expiresAt).getTime();
+        if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+          return false;
+        }
+      }
+
+      return true;
+    });
   }
 
   toTimestamp(date) {
@@ -415,6 +607,37 @@ class JoinRequestManager {
       );
     }
 
+    const snapshot = request.skyblockSnapshot;
+    if (snapshot) {
+      baseEmbed.addFields(
+        {
+          name: "SkyBlock",
+          value: `Level: ${formatNumber(snapshot.skyblockLevel)} | Skill Avg: ${snapshot.skillAverage ?? "N/A"}`,
+          inline: false
+        },
+        {
+          name: "Economy",
+          value: `Networth: ${formatNumber(snapshot.networth || 0)} | Purse: ${formatNumber(snapshot.purse || 0)} | Bank: ${formatNumber(snapshot.bank || 0)}`,
+          inline: false
+        },
+        {
+          name: "Dungeons / Slayer",
+          value: `Cata: ${formatNumber(snapshot.cata || 0)} | Class Avg: ${formatNumber(snapshot.classAverage || 0)}\n${snapshot.slayerSummary || "N/A"}`,
+          inline: false
+        },
+        {
+          name: "Progression",
+          value: `MP: ${formatNumber(snapshot.magicalPower || 0)} | Highest: F${snapshot.highestNormalFloor ?? "?"} / M${snapshot.highestMasterFloor ?? "?"}`,
+          inline: false
+        },
+        {
+          name: "Dungeon PB",
+          value: `F7: ${this.formatDungeonTime(snapshot.f7BestTime)} | M7: ${this.formatDungeonTime(snapshot.m7BestTime)}`,
+          inline: false
+        }
+      );
+    }
+
     return baseEmbed;
   }
 
@@ -475,6 +698,7 @@ class JoinRequestManager {
     } catch {
       request.requirementsSnapshot = null;
     }
+    request.skyblockSnapshot = await this.fetchSkyblockSnapshot(uuid || username);
 
     const embed = await this.buildRequestEmbed(request);
     const mentionText = config.discord.joinRequests?.mentionOnCreate || "";
@@ -485,20 +709,13 @@ class JoinRequestManager {
       name: `${request.username}_Join_Request`,
       appliedTags: initialStatusTagId ? [initialStatusTagId] : [],
       message: {
-        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n")
+        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
+        embeds: [embed],
+        components: this.buildRequestComponents(request)
       }
     });
 
-    const requestMessage = await thread
-      .send({
-        embeds: [embed],
-        components: [this.buildModeratorActionsRow(request)]
-      })
-      .catch(() => null);
-
-    await thread.send(`<${skycryptLink}>`).catch(() => {});
-
-    const starterMessage = requestMessage || (await thread.fetchStarterMessage().catch(() => null));
+    const starterMessage = await thread.fetchStarterMessage().catch(() => null);
     request.threadId = thread.id;
     request.messageId = starterMessage?.id ?? null;
     if (starterMessage) {
@@ -529,7 +746,7 @@ class JoinRequestManager {
     const embed = await this.buildRequestEmbed(request);
     await message.edit({
       embeds: [embed],
-      components: [this.buildModeratorActionsRow(request)]
+      components: this.buildRequestComponents(request)
     });
     await this.syncStatusReaction(request, message);
     await this.syncThreadStatusTag(request, thread);
@@ -539,7 +756,13 @@ class JoinRequestManager {
     const now = Date.now();
     let changed = false;
     for (const request of this.state.requests) {
-      if (request.status === "pending" && new Date(request.expiresAt).getTime() <= now) {
+      const expiresAt = new Date(request.expiresAt).getTime();
+      const isTimedOut = Number.isFinite(expiresAt) && expiresAt <= now;
+      if (!isTimedOut) {
+        continue;
+      }
+
+      if (request.status === "pending") {
         request.status = "expired";
         request.actions.push({
           action: "expired",
@@ -547,6 +770,17 @@ class JoinRequestManager {
           actorTag: "system",
           timestamp: new Date().toISOString(),
           note: "Timed out without action"
+        });
+        changed = true;
+        await this.updateRequestMessage(request);
+      } else if (request.status === "accepted_discord") {
+        request.status = "expired";
+        request.actions.push({
+          action: "expired",
+          actorDiscordId: null,
+          actorTag: "system",
+          timestamp: new Date().toISOString(),
+          note: "Accepted-via-discord timeout elapsed"
         });
         changed = true;
         await this.updateRequestMessage(request);
@@ -682,6 +916,43 @@ class JoinRequestManager {
       if (request.status === "expired") {
         return interaction.reply({ content: "This request timed out. Reinvite first, then accept.", ephemeral: true });
       }
+
+      const [playerGuild, botGuild] = await Promise.all([
+        this.getGuildByPlayer(request.uuid || request.username),
+        this.getGuildByPlayer(bot?.username)
+      ]);
+
+      if (playerGuild) {
+        if (this.areSameGuild(playerGuild, botGuild)) {
+          request.status = "accepted_ingame";
+          request.actions.push({
+            action: "accepted_ingame",
+            actorDiscordId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            timestamp: new Date().toISOString(),
+            note: "Player already in guild before Discord accept"
+          });
+          this.saveState();
+          await this.updateRequestMessage(request);
+          return interaction.reply({ content: `**${request.username}** is already in your guild. Marked as accepted.`, ephemeral: true });
+        }
+
+        const guildName = playerGuild?.name ? ` (${playerGuild.name})` : "";
+        request.actions.push({
+          action: "accept_blocked_already_in_guild",
+          actorDiscordId: interaction.user.id,
+          actorTag: interaction.user.tag,
+          timestamp: new Date().toISOString(),
+          note: `Blocked accept: user already in another guild${guildName}`
+        });
+        this.saveState();
+        await this.updateRequestMessage(request);
+        return interaction.reply({
+          content: `Cannot accept **${request.username}**: player is already in another guild${guildName}.`,
+          ephemeral: true
+        });
+      }
+
       bot.chat(`/g accept ${request.username}`);
       request.status = "accepted_discord";
       request.actions.push({
