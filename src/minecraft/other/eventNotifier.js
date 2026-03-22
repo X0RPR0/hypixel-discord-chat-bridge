@@ -24,7 +24,6 @@ if (config.minecraft.skyblockEventsNotifications.enabled) {
         }
 
         const minutes = Math.floor((eventData.events[0].start_timestamp - Date.now()) / 1000 / 60);
-
         let extraInfo = "";
         if (event == "JACOBS_CONTEST") {
           const { data: jacobResponse } = await axios.get("https://dawjaw.net/jacobs");
@@ -37,11 +36,12 @@ if (config.minecraft.skyblockEventsNotifications.enabled) {
 
         const cTime = getCustomTime(customTime, event);
         if (cTime.length !== 0 && cTime.includes(minutes.toString())) {
-          eventBOT.send(`[EVENT] Upcoming Event → ${eventData.name}${extraInfo} (starts in ${minutes}m)`);
+          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} starts in ${minutes}m`);
+          await delay(1500);
         }
 
         if (minutes == 0) {
-          eventBOT.send(`[EVENT] LIVE NOW → ${eventData.name}${extraInfo}`);
+          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} is live now`);
           await delay(1500);
         }
       }
