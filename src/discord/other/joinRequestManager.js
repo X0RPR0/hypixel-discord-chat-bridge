@@ -9,7 +9,7 @@ const {
   TextInputStyle
 } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
-const { getUUID } = require("../../contracts/API/mowojangAPI.js");
+const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { checkRequirements } = require("../commands/requirementsCommand.js");
 const { getLatestProfile } = require("../../../API/functions/getLatestProfile.js");
@@ -253,6 +253,34 @@ class JoinRequestManager {
 
   normalizeUsername(username) {
     return String(username || "").trim();
+  }
+
+  getLinkedUuidByDiscordId(discordId) {
+    const linkedData = readFileSync("data/linked.json");
+    if (!linkedData) {
+      return null;
+    }
+
+    const linked = JSON.parse(linkedData.toString("utf8"));
+    if (!linked || typeof linked !== "object") {
+      return null;
+    }
+
+    return Object.entries(linked).find(([, value]) => value === discordId)?.[0] || null;
+  }
+
+  async getLinkedIdentityByDiscordId(discordId) {
+    const uuid = this.getLinkedUuidByDiscordId(discordId);
+    if (!uuid) {
+      return null;
+    }
+
+    const username = await getUsername(uuid).catch(() => null);
+    if (!username) {
+      return null;
+    }
+
+    return { uuid, username };
   }
 
   buildSkyCryptLink(request, profileName = "") {
@@ -866,22 +894,29 @@ class JoinRequestManager {
       return interaction.reply({ content: "Join requests are currently disabled.", ephemeral: true });
     }
 
-    const modal = new ModalBuilder().setCustomId(PANEL_MODAL_ID).setTitle("Guild Join Request");
-    const usernameInput = new TextInputBuilder()
-      .setCustomId("username")
-      .setLabel("Minecraft Username")
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-      .setMaxLength(16);
-    const noteInput = new TextInputBuilder()
-      .setCustomId("note")
-      .setLabel("Optional Note")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(false)
-      .setMaxLength(300);
+    const linked = await this.getLinkedIdentityByDiscordId(interaction.user.id);
+    if (!linked) {
+      return interaction.reply({
+        content: "You must verify your Minecraft account first. Please run `/verify` and then try again.",
+        ephemeral: true
+      });
+    }
 
-    modal.addComponents(new ActionRowBuilder().addComponents(usernameInput), new ActionRowBuilder().addComponents(noteInput));
-    return interaction.showModal(modal);
+    const result = await this.createRequest({
+      username: linked.username,
+      uuid: linked.uuid,
+      source: "discord_button",
+      requestedByDiscordId: interaction.user.id,
+      requestedByDiscordTag: interaction.user.tag,
+      note: ""
+    });
+
+    const link = result.request.threadId ? `<#${result.request.threadId}>` : "thread";
+    if (result.created) {
+      return interaction.reply({ content: `Your join request has been created for \`${linked.username}\`: ${link}`, ephemeral: true });
+    }
+
+    return interaction.reply({ content: `You already have an active request: ${link}`, ephemeral: true });
   }
 
   async handleCreateModal(interaction) {
@@ -889,22 +924,19 @@ class JoinRequestManager {
       return interaction.reply({ content: "Join requests are currently disabled.", ephemeral: true });
     }
 
-    const username = this.normalizeUsername(interaction.fields.getTextInputValue("username"));
-    const note = interaction.fields.getTextInputValue("note") || "";
-    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
-      return interaction.reply({ content: "Invalid Minecraft username format.", ephemeral: true });
+    const linked = await this.getLinkedIdentityByDiscordId(interaction.user.id);
+    if (!linked) {
+      return interaction.reply({
+        content: "You must verify your Minecraft account first. Please run `/verify` and then try again.",
+        ephemeral: true
+      });
     }
 
-    let uuid = "";
-    try {
-      uuid = await getUUID(username);
-    } catch {
-      return interaction.reply({ content: "Could not resolve UUID for that username.", ephemeral: true });
-    }
+    const note = interaction.fields.getTextInputValue("note") || "";
 
     const result = await this.createRequest({
-      username,
-      uuid,
+      username: linked.username,
+      uuid: linked.uuid,
       source: "discord_button",
       requestedByDiscordId: interaction.user.id,
       requestedByDiscordTag: interaction.user.tag,
@@ -913,7 +945,7 @@ class JoinRequestManager {
 
     const link = result.request.threadId ? `<#${result.request.threadId}>` : "thread";
     if (result.created) {
-      return interaction.reply({ content: `Your join request has been created: ${link}`, ephemeral: true });
+      return interaction.reply({ content: `Your join request has been created for \`${linked.username}\`: ${link}`, ephemeral: true });
     }
 
     return interaction.reply({ content: `You already have an active request: ${link}`, ephemeral: true });
