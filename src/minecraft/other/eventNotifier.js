@@ -36,12 +36,12 @@ if (config.minecraft.skyblockEventsNotifications.enabled) {
 
         const cTime = getCustomTime(customTime, event);
         if (cTime.length !== 0 && cTime.includes(minutes.toString())) {
-          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} starts in ${minutes}m`);
+          eventBOT.send(`[EVENT] Upcoming Event → ${eventData.name}${extraInfo} (starts in ${minutes}m)`);
           await delay(1500);
         }
 
         if (minutes == 0) {
-          eventBOT.send(`[EVENT] ${eventData.name}${extraInfo} is live now`);
+          eventBOT.send(`[EVENT] LIVE NOW → ${eventData.name}${extraInfo}`);
           await delay(1500);
         }
       }
