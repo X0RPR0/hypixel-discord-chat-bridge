@@ -24,4 +24,4 @@ RUN mkdir -p /home/node/.ssh \
   && chmod 700 /home/node/.ssh \
   && chmod 644 /home/node/.ssh/known_hosts \
   && git config --global pull.rebase false
-CMD [ " dumb-init\, \node\, \index.js\ ]
+CMD ["dumb-init", "node", "index.js"]
