@@ -106,7 +106,8 @@ function generateEmbed(data) {
     )
     .setThumbnail(`https://www.mc-heads.net/avatar/${data.nickname}`)
     .setFooter({
-      text: `/help [command] for more information`,});
+      text: `/help [command] for more information`
+    });
 }
 
 module.exports = {

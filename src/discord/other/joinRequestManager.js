@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
@@ -185,9 +185,7 @@ class JoinRequestManager {
     const link = String(request?.skycryptLink || "").trim() || this.buildSkyCryptLink(request);
     if (!link) return null;
 
-    return new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Open SkyCrypt").setURL(link)
-    );
+    return new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Open SkyCrypt").setURL(link));
   }
 
   buildRequestComponents(request) {
@@ -291,9 +289,7 @@ class JoinRequestManager {
 
   buildSkyCryptLink(request, profileName = "") {
     const username = encodeURIComponent(request?.username || "");
-    const preferredProfile = String(
-      profileName || request?.skyblockSnapshot?.profileName || request?.requirementsSnapshot?.skyblockProfile || ""
-    ).trim();
+    const preferredProfile = String(profileName || request?.skyblockSnapshot?.profileName || request?.requirementsSnapshot?.skyblockProfile || "").trim();
     if (preferredProfile) {
       return `https://sky.shiiyu.moe/stats/${username}/${encodeURIComponent(preferredProfile)}`;
     }
@@ -306,11 +302,7 @@ class JoinRequestManager {
       return fromSnapshot;
     }
 
-    const withTimeout = (promise, ms = 8000) =>
-      Promise.race([
-        promise,
-        new Promise((resolve) => setTimeout(() => resolve(null), ms))
-      ]);
+    const withTimeout = (promise, ms = 8000) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
 
     try {
       const latest = await withTimeout(getLatestProfile(request?.uuid || request?.username), 8000);
@@ -330,11 +322,7 @@ class JoinRequestManager {
     const identifier = String(player || "").trim();
     if (!identifier) return null;
 
-    const withTimeout = (promise, ms = 8000) =>
-      Promise.race([
-        promise,
-        new Promise((resolve) => setTimeout(() => resolve(null), ms))
-      ]);
+    const withTimeout = (promise, ms = 8000) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
 
     try {
       return await withTimeout(hypixel.getGuild("player", identifier, { noCaching: true, noCacheCheck: true }), 8000);
@@ -349,8 +337,12 @@ class JoinRequestManager {
     const bId = String(b.id || "").trim();
     if (aId && bId && aId === bId) return true;
 
-    const aName = String(a.name || "").trim().toLowerCase();
-    const bName = String(b.name || "").trim().toLowerCase();
+    const aName = String(a.name || "")
+      .trim()
+      .toLowerCase();
+    const bName = String(b.name || "")
+      .trim()
+      .toLowerCase();
     return Boolean(aName && bName && aName === bName);
   }
 
@@ -692,12 +684,8 @@ class JoinRequestManager {
 
     const existing = this.getActiveRequestByUsername(normalizedUsername);
     if (existing) {
-      const existingThread = existing?.threadId
-        ? await this.discord.client.channels.fetch(existing.threadId).catch(() => null)
-        : null;
-      const existingMessage = existingThread?.isThread?.() && existing?.messageId
-        ? await existingThread.messages.fetch(existing.messageId).catch(() => null)
-        : null;
+      const existingThread = existing?.threadId ? await this.discord.client.channels.fetch(existing.threadId).catch(() => null) : null;
+      const existingMessage = existingThread?.isThread?.() && existing?.messageId ? await existingThread.messages.fetch(existing.messageId).catch(() => null) : null;
 
       if (existingThread && existingMessage) {
         return { request: existing, created: false };
@@ -976,10 +964,7 @@ class JoinRequestManager {
         return interaction.reply({ content: "This request timed out. Reinvite first, then accept.", ephemeral: true });
       }
 
-      const [playerGuild, botGuild] = await Promise.all([
-        this.getGuildByPlayer(request.uuid || request.username),
-        this.getGuildByPlayer(bot?.username)
-      ]);
+      const [playerGuild, botGuild] = await Promise.all([this.getGuildByPlayer(request.uuid || request.username), this.getGuildByPlayer(bot?.username)]);
 
       if (playerGuild) {
         if (this.areSameGuild(playerGuild, botGuild)) {

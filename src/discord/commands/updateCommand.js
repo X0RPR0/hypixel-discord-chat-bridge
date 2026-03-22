@@ -358,7 +358,8 @@ module.exports = {
         const updateRole = new SuccessEmbed(
           `Successfully synced ${extra.discordId ? `<@${extra.discordId}>` : "your"} roles with \`${await getUsername(uuid)}\`'s stats!`
         ).setFooter({
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
 
         await interaction.followUp({ embeds: [updateRole], flags: MessageFlags.Ephemeral });
       }
@@ -366,7 +367,8 @@ module.exports = {
       console.log(error);
       if (!extra.hidden) {
         const errorEmbed = new ErrorEmbed(`\`\`\`${error}\`\`\``).setFooter({
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
 
         await interaction.editReply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
       }

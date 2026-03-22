@@ -34,7 +34,8 @@ module.exports = {
             }
           )
           .setFooter({
-            text: "/help [command] for more information"});
+            text: "/help [command] for more information"
+          });
 
         await interaction.followUp({ embeds: [helpMenu] });
       } else {
@@ -72,7 +73,8 @@ module.exports = {
           .setTitle(`**${type === "discord" ? "/" : config.minecraft.bot.prefix}${command.name}**`)
           .setDescription(description + "\n")
           .setFooter({
-            text: "() = required, [] = optional"});
+            text: "() = required, [] = optional"
+          });
 
         await interaction.followUp({ embeds: [embed] });
       }

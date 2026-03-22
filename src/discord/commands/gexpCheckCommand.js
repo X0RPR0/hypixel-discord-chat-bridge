@@ -50,7 +50,8 @@ module.exports = {
         .setAuthor({ name: "Weekly Guild Experience Leaderboard" })
         .setDescription(`**Progress:** \`${progress}%\` (\`${position}/${members.length}\`)`)
         .setFooter({
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
 
       await interaction.editReply({ embeds: [progressEmbed] });
 
@@ -80,7 +81,8 @@ module.exports = {
     writeFileSync("data/guildExperienceSkipped.txt", skippedString);
 
     const finalEmbed = new SuccessEmbed("Weekly Guild Experience Leaderboard").setFooter({
-      text: `/help [command] for more information`,});
+      text: `/help [command] for more information`
+    });
 
     await interaction.editReply({ embeds: [finalEmbed], files: ["data/guildExperience.txt", "data/guildExperienceSkipped.txt"] });
   }

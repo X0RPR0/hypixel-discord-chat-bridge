@@ -39,7 +39,8 @@ module.exports = {
 
         const username = await getUsername(uuid);
         const embed = new SuccessEmbed(`<@${user.id}> is linked to \`${username}\` (\`${uuid}\`).`, {
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
         await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
       } else if (!user && name) {
         const uuid = await getUUID(name);
@@ -53,7 +54,8 @@ module.exports = {
         }
 
         const embed = new SuccessEmbed(`\`${name}\` (\`${uuid}\`) is linked to <@${discordID}>.`, {
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
 
         await interaction.followUp({ embeds: [embed], flags: MessageFlags.Ephemeral });
       } else {
@@ -61,7 +63,8 @@ module.exports = {
       }
     } catch (error) {
       const errorEmbed = new ErrorEmbed(`\`\`\`${error}\`\`\``).setFooter({
-        text: `/help [command] for more information`,});
+        text: `/help [command] for more information`
+      });
 
       await interaction.editReply({ embeds: [errorEmbed] });
     }

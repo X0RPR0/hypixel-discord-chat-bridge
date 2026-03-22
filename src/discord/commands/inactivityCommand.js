@@ -69,7 +69,8 @@ module.exports = {
         .setTitle("Inactivity Failed")
         .setDescription(`You are already inactive until <t:${inactivity[uuid].expire}:F> (<t:${inactivity[uuid].expire}:R>)`)
         .setFooter({
-          text: `/help [command] for more information`,});
+          text: `/help [command] for more information`
+        });
       return await interaction.followUp({ embeds: [embed] });
     }
 
@@ -95,7 +96,8 @@ module.exports = {
       )
       .setThumbnail(`https://www.mc-heads.net/avatar/${username}`)
       .setFooter({
-        text: `/help [command] for more information`,});
+        text: `/help [command] for more information`
+      });
 
     const channel = interaction.client.channels.cache.get(config.verification.inactivity.channel);
     if (channel === undefined) {
@@ -106,7 +108,8 @@ module.exports = {
     writeFileSync("data/inactivity.json", JSON.stringify(inactivity, null, 2));
     await channel.send({ embeds: [inactivityEmbed] });
     const inactivityResponse = new SuccessEmbed(`Inactivity request has been successfully sent to the guild staff.`).setFooter({
-      text: `/help [command] for more information`,});
+      text: `/help [command] for more information`
+    });
     await interaction.followUp({ embeds: [inactivityResponse] });
   }
 };

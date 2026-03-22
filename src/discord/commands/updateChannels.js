@@ -34,7 +34,8 @@ module.exports = {
 
     if (!extra.hidden) {
       const embed = new SuccessEmbed("The channels have been updated successfully.").setFooter({
-        text: `/help [command] for more information`,});
+        text: `/help [command] for more information`
+      });
 
       await interaction.followUp({ embeds: [embed] });
     }
