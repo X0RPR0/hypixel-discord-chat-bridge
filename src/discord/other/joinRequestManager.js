@@ -850,7 +850,7 @@ class JoinRequestManager {
       return null;
     }
 
-    const uuid = await getUUID(username);
+    const uuid = await getUUID(username).catch(() => null);
     return this.createRequest({
       username,
       uuid,

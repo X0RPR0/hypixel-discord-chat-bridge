@@ -72,7 +72,11 @@ class StateHandler extends eventHandler {
     }
 
     if (this.isRequestMessage(message)) {
-      const username = replaceAllRanks(message.split("has")[0].replaceAll("-----------------------------------------------------\n", ""));
+      const username = this.extractRequestUsername(message);
+      if (!username) {
+        return;
+      }
+
       const uuid = await getUUID(username).catch(() => null);
       if (uuid && config.minecraft.guildRequirements.enabled) {
         const playerInfo = await checkRequirements(uuid).catch(() => null);
@@ -759,6 +763,20 @@ class StateHandler extends eventHandler {
   isRequestMessage(message) {
     const normalized = String(message || "").toLowerCase();
     return normalized.includes("requested to join") && normalized.includes("guild");
+  }
+
+  extractRequestUsername(message) {
+    const cleaned = String(message || "").replaceAll("-----------------------------------------------------\n", "").trim();
+    const withoutPrefix = cleaned.replace(/^guild\s*>\s*/i, "");
+    const normalized = replaceAllRanks(withoutPrefix).trim();
+
+    const match = normalized.match(/^(?<username>[A-Za-z0-9_]{3,16})(?:\s+has)?\s+requested to join(?:\s+(?:the|your))?\s+guild!?/i);
+    if (match?.groups?.username) {
+      return match.groups.username;
+    }
+
+    const fallback = normalized.match(/\b([A-Za-z0-9_]{3,16})\b/);
+    return fallback?.[1] || null;
   }
 
   isBlockedMessage(message) {
