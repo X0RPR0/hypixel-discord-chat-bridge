@@ -24,6 +24,7 @@ const config = require("../../../config.json");
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
 const PANEL_BUTTON_ID = "joinreq:create";
+const PANEL_VERIFY_BUTTON_ID = "joinreq_verify_panel";
 const PANEL_MODAL_ID = "joinreq:create:submit";
 
 class JoinRequestManager {
@@ -166,7 +167,10 @@ class JoinRequestManager {
   }
 
   buildEntryPanelRow() {
-    return new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(PANEL_BUTTON_ID).setLabel("Request to Join").setStyle(ButtonStyle.Primary));
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(PANEL_BUTTON_ID).setLabel("Request to Join").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(PANEL_VERIFY_BUTTON_ID).setLabel("Verify Account").setStyle(ButtonStyle.Secondary)
+    );
   }
 
   buildModeratorActionsRow(request) {
@@ -1098,5 +1102,6 @@ class JoinRequestManager {
 module.exports = {
   JoinRequestManager,
   PANEL_BUTTON_ID,
+  PANEL_VERIFY_BUTTON_ID,
   PANEL_MODAL_ID
 };

@@ -1,7 +1,7 @@
 const { isLinkedMember, isGuildMember, isVerifiedMember } = require("../../contracts/verificaiton.js");
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
-const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_MODAL_ID } = require("../other/joinRequestManager.js");
+const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_VERIFY_BUTTON_ID, PANEL_MODAL_ID } = require("../other/joinRequestManager.js");
 // eslint-disable-next-line no-unused-vars
 const { CommandInteraction, Events } = require("discord.js");
 const config = require("../../../config.json");
@@ -58,6 +58,13 @@ module.exports = {
       } else if (interaction.isButton()) {
         if (interaction.customId === PANEL_BUTTON_ID) {
           return interaction.client.joinRequestManager.handleCreateButton(interaction);
+        }
+
+        if (interaction.customId === PANEL_VERIFY_BUTTON_ID) {
+          return interaction.reply({
+            content: "Use `/verify username:<your_minecraft_name>` to link your account first. Then click `Request to Join`.",
+            ephemeral: true
+          });
         }
 
         if (JoinRequestManager.isJoinRequestComponent(interaction.customId)) {
