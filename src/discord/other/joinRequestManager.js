@@ -1,8 +1,9 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { checkRequirements } = require("../commands/requirementsCommand.js");
+const verifyCommand = require("../commands/verifyCommand.js");
 const { getLatestProfile } = require("../../../API/functions/getLatestProfile.js");
 const { getSkillAverage } = require("../../../API/constants/skills.js");
 const { getAccessories } = require("../../../API/stats/accessories.js");
@@ -17,6 +18,7 @@ const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
 const PANEL_BUTTON_ID = "joinreq:create";
 const PANEL_VERIFY_BUTTON_ID = "joinreq_verify_panel";
 const PANEL_MODAL_ID = "joinreq:create:submit";
+const PANEL_VERIFY_MODAL_ID = "joinreq:verify:submit";
 
 class JoinRequestManager {
   constructor(discord) {
@@ -151,9 +153,9 @@ class JoinRequestManager {
     return new EmbedBuilder()
       .setColor(3447003)
       .setTitle("Guild Join Requests")
-      .setDescription("Want to join the guild? Click the button below. Your verified linked Minecraft account will be used.")
+      .setDescription("Want to join the guild? Click the button below. If you are not linked yet, use `Verify Account` first.")
       .setFooter({
-        text: "Link first with /verify, then use the request button."
+        text: "Verify account -> Request to Join"
       });
   }
 
@@ -913,6 +915,32 @@ class JoinRequestManager {
     return interaction.reply({ content: `You already have an active request: ${link}`, ephemeral: true });
   }
 
+  async handleVerifyButton(interaction) {
+    if (!this.isEnabled() || !config.discord.joinRequests?.allowDiscordSelfRequest) {
+      return interaction.reply({ content: "Join requests are currently disabled.", ephemeral: true });
+    }
+
+    const modal = new ModalBuilder().setCustomId(PANEL_VERIFY_MODAL_ID).setTitle("Verify Minecraft Account");
+    const usernameInput = new TextInputBuilder().setCustomId("username").setLabel("Minecraft Username").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(16);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(usernameInput));
+    return interaction.showModal(modal);
+  }
+
+  async handleVerifyModal(interaction) {
+    if (!this.isEnabled() || !config.discord.joinRequests?.allowDiscordSelfRequest) {
+      return interaction.reply({ content: "Join requests are currently disabled.", ephemeral: true });
+    }
+
+    const username = this.normalizeUsername(interaction.fields.getTextInputValue("username"));
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
+      return interaction.reply({ content: "Invalid Minecraft username format.", ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+    return verifyCommand.runVerification(interaction, username);
+  }
+
   async handleCreateModal(interaction) {
     if (!this.isEnabled() || !config.discord.joinRequests?.allowDiscordSelfRequest) {
       return interaction.reply({ content: "Join requests are currently disabled.", ephemeral: true });
@@ -1071,5 +1099,6 @@ module.exports = {
   JoinRequestManager,
   PANEL_BUTTON_ID,
   PANEL_VERIFY_BUTTON_ID,
-  PANEL_MODAL_ID
+  PANEL_MODAL_ID,
+  PANEL_VERIFY_MODAL_ID
 };
