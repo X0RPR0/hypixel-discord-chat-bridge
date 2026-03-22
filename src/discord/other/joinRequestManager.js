@@ -119,17 +119,36 @@ class JoinRequestManager {
 
     let panelMessage = null;
     const configuredMessageId = config.discord.joinRequests?.requestEntryMessageId;
-    const messageId = configuredMessageId || this.state.panelMessageId;
+    const stateMessageId = this.state.panelMessageId;
 
-    if (messageId) {
-      panelMessage = await channel.messages.fetch(messageId).catch(() => null);
-      if (panelMessage) {
-        await panelMessage.edit(payload);
-      }
+    if (configuredMessageId) {
+      panelMessage = await channel.messages.fetch(configuredMessageId).catch(() => null);
+    }
+
+    if (!panelMessage && stateMessageId && stateMessageId !== configuredMessageId) {
+      panelMessage = await channel.messages.fetch(stateMessageId).catch(() => null);
+    }
+
+    if (panelMessage) {
+      await panelMessage.edit(payload);
     }
 
     if (!panelMessage) {
       panelMessage = await channel.send(payload);
+    }
+
+    const recentMessages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    if (recentMessages) {
+      const duplicates = recentMessages.filter((message) => {
+        if (message.id === panelMessage.id) return false;
+        if (message.author?.id !== this.discord.client.user.id) return false;
+        const buttonId = message.components?.[0]?.components?.[0]?.customId;
+        return buttonId === PANEL_BUTTON_ID;
+      });
+
+      for (const duplicate of duplicates.values()) {
+        await duplicate.delete().catch(() => {});
+      }
     }
 
     this.state.panelMessageId = panelMessage.id;
@@ -140,9 +159,9 @@ class JoinRequestManager {
     return new EmbedBuilder()
       .setColor(3447003)
       .setTitle("Guild Join Requests")
-      .setDescription("Want to join the guild? Click the button below and submit your Minecraft username.")
+      .setDescription("Want to join the guild? Click the button below. Your verified linked Minecraft account will be used.")
       .setFooter({
-        text: "Use the request button to open a forum thread"
+        text: "Link first with /verify, then use the request button."
       });
   }
 
