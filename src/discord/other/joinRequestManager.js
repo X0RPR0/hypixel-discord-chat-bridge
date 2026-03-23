@@ -153,7 +153,9 @@ class JoinRequestManager {
     return new EmbedBuilder()
       .setColor(3447003)
       .setTitle("Guild Join Requests")
-      .setDescription("Want to join the guild? Click the button below. If you are not linked yet, use `Verify Account` first.")
+      .setDescription(
+        "Want to join the guild? Click the button below. If you are not linked yet, use `Verify Account` first.\nOnce you are verified, you can use the guild chat channels immediately."
+      )
       .setFooter({
         text: "Verify account -> Request to Join"
       });
@@ -331,6 +333,11 @@ class JoinRequestManager {
     } catch {
       return null;
     }
+  }
+
+  async isAlreadyInBotGuild(player) {
+    const [playerGuild, botGuild] = await Promise.all([this.getGuildByPlayer(player), this.getGuildByPlayer(bot?.username)]);
+    return Boolean(playerGuild && this.areSameGuild(playerGuild, botGuild));
   }
 
   areSameGuild(a, b) {
@@ -898,6 +905,14 @@ class JoinRequestManager {
       });
     }
 
+    const alreadyInGuild = await this.isAlreadyInBotGuild(linked.uuid || linked.username);
+    if (alreadyInGuild) {
+      return interaction.reply({
+        content: `You are already in the guild as **${linked.username}**. No join request is needed.`,
+        ephemeral: true
+      });
+    }
+
     const result = await this.createRequest({
       username: linked.username,
       uuid: linked.uuid,
@@ -950,6 +965,14 @@ class JoinRequestManager {
     if (!linked) {
       return interaction.reply({
         content: "You must verify your Minecraft account first. Please run `/verify` and then try again.",
+        ephemeral: true
+      });
+    }
+
+    const alreadyInGuild = await this.isAlreadyInBotGuild(linked.uuid || linked.username);
+    if (alreadyInGuild) {
+      return interaction.reply({
+        content: `You are already in the guild as **${linked.username}**. No join request is needed.`,
         ephemeral: true
       });
     }
