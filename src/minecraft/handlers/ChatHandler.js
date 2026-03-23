@@ -766,7 +766,9 @@ class StateHandler extends eventHandler {
   }
 
   extractRequestUsername(message) {
-    const cleaned = String(message || "").replaceAll("-----------------------------------------------------\n", "").trim();
+    const cleaned = String(message || "")
+      .replaceAll("-----------------------------------------------------\n", "")
+      .trim();
     const withoutPrefix = cleaned.replace(/^guild\s*>\s*/i, "");
     const normalized = replaceAllRanks(withoutPrefix).trim();
 
