@@ -146,6 +146,38 @@ describe("roastEngine stage matrix v4", () => {
     expect(result.comboKey).toBe("stage_core_floor+stage_sa_floor");
   });
 
+  test("stage combo uses dedicated template instead of generic stacked fallback", () => {
+    const result = evaluateRoast({
+      stats: makeStats({
+        skills: {
+          combat: { levelWithProgress: 36 },
+          mining: { levelWithProgress: 28 },
+          farming: { levelWithProgress: 20 },
+          fishing: { levelWithProgress: 46 },
+          foraging: { levelWithProgress: 24 },
+          alchemy: { levelWithProgress: 16 },
+          enchanting: { levelWithProgress: 38 },
+          taming: { levelWithProgress: 24 },
+          carpentry: { levelWithProgress: 18 }
+        },
+        skillAverage: 28.8,
+        sbLevel: 184.32,
+        networth: 631000000,
+        networthFormatted: "631M",
+        cataLevel: 20,
+        slayerTotal: 17,
+        inactiveDays: 1
+      }),
+      username: "TomPso11",
+      isSelf: false,
+      rng: () => 0.9
+    });
+
+    expect(result.comboKey).toBe("stage_core_floor+stage_sa_floor");
+    expect(result.message.toLowerCase()).not.toContain("stacked stage core floor with stage sa floor");
+    expect(result.message.toLowerCase()).toContain("failed both core and sa stage checks");
+  });
+
   test("inventory api off is roastable instead of no-issue", () => {
     const result = evaluateRoast({
       stats: makeStats({
@@ -178,6 +210,24 @@ describe("roastEngine stage matrix v4", () => {
     expect(result.findings.some((finding) => finding.id === "inventory_api_off")).toBe(true);
   });
 
+  test("inventory api off bypasses new-player protection even with low stats", () => {
+    const result = evaluateRoast({
+      stats: makeStats({
+        sbLevel: 12,
+        skillAverage: 8,
+        networth: 0,
+        networthFormatted: "0",
+        inventoryApiOff: true
+      }),
+      username: "ApiOffPlayer",
+      isSelf: false,
+      rng: () => 0.4
+    });
+
+    expect(result.classification).toBe("SKILL_ISSUE");
+    expect(result.classification).not.toBe("NEW_PLAYER_PROTECTED");
+  });
+
   test("nuke line can trigger with severe finding", () => {
     const result = evaluateRoast({
       stats: makeStats({
@@ -203,5 +253,35 @@ describe("roastEngine stage matrix v4", () => {
     });
 
     expect(result.message.toLowerCase()).toContain("why");
+  });
+
+  test("stage floor is cap-aware for 50-cap skills at high sb level", () => {
+    const result = evaluateRoast({
+      stats: makeStats({
+        sbLevel: 486.46,
+        skillAverage: 54,
+        networth: 15000000000,
+        networthFormatted: "15B",
+        cataLevel: 45,
+        slayerTotal: 50,
+        inactiveDays: 0,
+        skills: {
+          combat: { levelWithProgress: 60 },
+          mining: { levelWithProgress: 60 },
+          farming: { levelWithProgress: 60 },
+          fishing: { levelWithProgress: 50 },
+          foraging: { levelWithProgress: 50 },
+          enchanting: { levelWithProgress: 60 },
+          alchemy: { levelWithProgress: 50 },
+          taming: { levelWithProgress: 60 },
+          carpentry: { levelWithProgress: 50 }
+        }
+      }),
+      username: "Jamesien",
+      isSelf: false,
+      rng: () => 0.7
+    });
+
+    expect(result.findings.some((finding) => finding.id === "stage_core_floor")).toBe(false);
   });
 });

@@ -103,6 +103,16 @@ const DEFAULT_ROAST_CONFIG = {
       mild: ["{username} min-maxed combat and forgot everything else exists."],
       high: ["{username} lives in dungeons and still refuses to mine. wild."],
       extreme: ["{username} is dungeon-locked with a mining allergy. emergency."]
+    },
+    "midgame_low_sa+core_skills_behind": {
+      mild: ["{username} has midgame level but earlygame fundamentals. core skills are lagging hard."],
+      high: ["SB {sbLevel} with SA {skillAverage} and weak core skills. progression got skipped."],
+      extreme: ["{username} speedran levels and forgot to build fundamentals."]
+    },
+    "stage_core_floor+stage_sa_floor": {
+      mild: ["{username} is behind both core skill floor and SA floor for this bracket."],
+      high: ["SB {sbLevel} and both core + SA floors are missed. this stage is underbuilt."],
+      extreme: ["{username} failed both core and SA stage checks. hard rebuild angle."]
     }
   },
   roastTemplatesByRule: {
@@ -152,38 +162,38 @@ const DEFAULT_ROAST_CONFIG = {
       extreme: ["{lineA}\n{lineB}\nthis is why progression feels cursed."]
     },
     stage_core_floor: {
-      mild: ["{username} is SB {sbLevel} but {lowestCoreName} is only {lowestCoreValue}. stage floor is {target}."],
-      high: ["{lowestCoreName} {lowestCoreValue} at SB {sbLevel}? bracket floor is {target}."],
+      mild: ["{username} is SB {sbLevel} but {lowestCoreName} is only {lowestCoreValue}."],
+      high: ["{lowestCoreName} {lowestCoreValue} at SB {sbLevel}? that is behind for this stage."],
       extreme: ["{lineA}\n{lineB}\ncore progression failed the stage check."]
     },
     stage_utility_floor: {
-      mild: ["utility check says {lowestUtilityName} {lowestUtilityValue}, target {target} for this stage."],
-      high: ["{username} skipped utility skill leveling: {lowestUtilityName} {lowestUtilityValue} < {target}."],
+      mild: ["utility check says {lowestUtilityName} {lowestUtilityValue}. that is behind for this stage."],
+      high: ["{username} skipped utility skill leveling: {lowestUtilityName} {lowestUtilityValue}."],
       extreme: ["{lineA}\n{lineB}\nthis utility gap is griefing your progression."]
     },
     stage_sa_floor: {
-      mild: ["SB {sbLevel} with SA {skillAverage}. stage target is {target}."],
-      high: ["SA {skillAverage} is under the {target} floor for this bracket."],
+      mild: ["SB {sbLevel} with SA {skillAverage}. that average is behind for this stage."],
+      high: ["SA {skillAverage} is under where this bracket should be."],
       extreme: ["{lineA}\n{lineB}\nstage average is nowhere near ready."]
     },
     stage_networth_floor: {
-      mild: ["{username} is SB {sbLevel} with only {networth}. stage wealth target is {targetNetworth}."],
+      mild: ["{username} is SB {sbLevel} with only {networth}. economy is behind for this stage."],
       high: ["{networth} networth at this stage is undercooked."],
       extreme: ["{lineA}\n{lineB}\nthis economy is still tutorial mode."]
     },
     stage_cata_floor: {
-      mild: ["cata {cata} is below stage target {target}."],
-      high: ["SB {sbLevel} with cata {cata} is behind the bracket curve ({target})."],
+      mild: ["cata {cata} is behind for this stage."],
+      high: ["SB {sbLevel} with cata {cata} is behind the bracket curve."],
       extreme: ["{lineA}\n{lineB}\ndungeon progression is missing."]
     },
     stage_slayer_floor: {
-      mild: ["slayer total {slayerTotal} is low for this stage ({target})."],
-      high: ["{username} skipped slayers: {slayerTotal} < {target}."],
+      mild: ["slayer total {slayerTotal} is low for this stage."],
+      high: ["{username} skipped slayers: total {slayerTotal} is behind."],
       extreme: ["{lineA}\n{lineB}\nslayer progression is absent."]
     },
     endgame_nonmax: {
-      mild: ["endgame check: {worstSkillName} {worstSkillValue} is still below near-max target {target}."],
-      high: ["SB {sbLevel} endgame with {worstSkillName} {worstSkillValue} is not near max ({target})."],
+      mild: ["endgame check: {worstSkillName} {worstSkillValue} is still not near max."],
+      high: ["SB {sbLevel} endgame with {worstSkillName} {worstSkillValue} is not near max."],
       extreme: ["{lineA}\n{lineB}\nendgame badge without endgame skills."]
     },
     endgame_rich_not_maxed: {
@@ -275,6 +285,22 @@ function getSeverityFromValue(value, thresholds) {
   return "mild";
 }
 
+function normalizeComboKey(key) {
+  return String(key || "")
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .sort()
+    .join("+");
+}
+
+function formatRuleIdForText(id) {
+  return String(id || "")
+    .split("_")
+    .join(" ")
+    .toLowerCase();
+}
+
 function mergeRoastConfig(configRoast) {
   const config = {
     ...DEFAULT_ROAST_CONFIG,
@@ -317,10 +343,14 @@ function mergeRoastConfig(configRoast) {
     }
   };
 
-  config.comboTemplates = {
+  const mergedComboTemplates = {
     ...DEFAULT_ROAST_CONFIG.comboTemplates,
     ...(configRoast?.comboTemplates || {})
   };
+  config.comboTemplates = Object.entries(mergedComboTemplates).reduce((acc, [key, value]) => {
+    acc[normalizeComboKey(key)] = value;
+    return acc;
+  }, {});
 
   config.roastTemplatesByRule = {
     ...DEFAULT_ROAST_CONFIG.roastTemplatesByRule,
@@ -340,41 +370,50 @@ function evaluateStageRules({ stats, skills, avgSkill, stagePack }) {
   const coreSkills = ["combat", "mining", "farming", "fishing", "foraging"];
   const utilitySkills = ["enchanting", "alchemy", "taming", "carpentry"];
 
-  const coreEntries = coreSkills.map((key) => ({ key, value: getSkill(skills, key) }));
-  const utilityEntries = utilitySkills.map((key) => ({ key, value: getSkill(skills, key) }));
-  const lowestCore = coreEntries.reduce((acc, entry) => (entry.value < acc.value ? entry : acc), coreEntries[0]);
-  const lowestUtility = utilityEntries.reduce((acc, entry) => (entry.value < acc.value ? entry : acc), utilityEntries[0]);
+  const coreEntries = coreSkills.map((key) => {
+    const value = getSkill(skills, key);
+    const target = Math.min(stagePack.floors.core, SKILL_CAPS[key] || stagePack.floors.core);
+    return { key, value, target, deficit: Math.max(0, target - value) };
+  });
+  const utilityEntries = utilitySkills.map((key) => {
+    const value = getSkill(skills, key);
+    const target = Math.min(stagePack.floors.utility, SKILL_CAPS[key] || stagePack.floors.utility);
+    return { key, value, target, deficit: Math.max(0, target - value) };
+  });
 
-  if (lowestCore.value < stagePack.floors.core) {
-    const deficit = stagePack.floors.core - lowestCore.value;
+  const worstCore = coreEntries.reduce((acc, entry) => (entry.deficit > acc.deficit ? entry : acc), coreEntries[0]);
+  const worstUtility = utilityEntries.reduce((acc, entry) => (entry.deficit > acc.deficit ? entry : acc), utilityEntries[0]);
+
+  if (worstCore.deficit > 0) {
+    const deficit = worstCore.deficit;
     findings.push({
       id: "stage_core_floor",
       weight: 4,
       severity: getSeverityFromValue(deficit, { high: 8, extreme: 14 }),
       data: {
         sbLevel: sbLevelRounded,
-        lowestCoreName: titleCase(lowestCore.key),
-        lowestCoreValue: Math.floor(lowestCore.value),
-        target: stagePack.floors.core,
-        lineA: `${titleCase(lowestCore.key)} ${Math.floor(lowestCore.value)}`,
-        lineB: `target ${stagePack.floors.core}`
+        lowestCoreName: titleCase(worstCore.key),
+        lowestCoreValue: Math.floor(worstCore.value),
+        target: worstCore.target,
+        lineA: `${titleCase(worstCore.key)} ${Math.floor(worstCore.value)}`,
+        lineB: `target ${worstCore.target}`
       }
     });
   }
 
-  if (lowestUtility.value < stagePack.floors.utility) {
-    const deficit = stagePack.floors.utility - lowestUtility.value;
+  if (worstUtility.deficit > 0) {
+    const deficit = worstUtility.deficit;
     findings.push({
       id: "stage_utility_floor",
       weight: 3,
       severity: getSeverityFromValue(deficit, { high: 8, extreme: 14 }),
       data: {
         sbLevel: sbLevelRounded,
-        lowestUtilityName: titleCase(lowestUtility.key),
-        lowestUtilityValue: Math.floor(lowestUtility.value),
-        target: stagePack.floors.utility,
-        lineA: `${titleCase(lowestUtility.key)} ${Math.floor(lowestUtility.value)}`,
-        lineB: `target ${stagePack.floors.utility}`
+        lowestUtilityName: titleCase(worstUtility.key),
+        lowestUtilityValue: Math.floor(worstUtility.value),
+        target: worstUtility.target,
+        lineA: `${titleCase(worstUtility.key)} ${Math.floor(worstUtility.value)}`,
+        lineB: `target ${worstUtility.target}`
       }
     });
   }
@@ -704,7 +743,7 @@ function getCombo(findings) {
 
   for (const combo of combos) {
     if (combo.every((id) => ids.has(id))) {
-      return combo.sort().join("+");
+      return normalizeComboKey(combo.join("+"));
     }
   }
 
@@ -760,7 +799,7 @@ function buildSpecificMainHit({ username, findings, comboKey, config, rng }) {
 
   if (comboKey) {
     const [firstRule, secondRule] = comboKey.split("+");
-    const genericComboLine = `${username} stacked ${titleCase(firstRule)} + ${titleCase(secondRule)}. that combo is illegal.`;
+    const genericComboLine = `${username} stacked ${formatRuleIdForText(firstRule)} with ${formatRuleIdForText(secondRule)}. that combo is cursed.`;
     return genericComboLine;
   }
 
@@ -802,9 +841,10 @@ function evaluateRoast({ stats, username, isSelf, configRoast, rng = Math.random
   const config = mergeRoastConfig(configRoast);
 
   const isNewPlayer =
-    stats.sbLevel < config.newPlayerGuard.sbLevelBelow ||
-    stats.skillAverage < config.newPlayerGuard.skillAverageBelow ||
-    (!stats.inventoryApiOff && stats.networth < config.newPlayerGuard.networthBelow);
+    !stats.inventoryApiOff &&
+    (stats.sbLevel < config.newPlayerGuard.sbLevelBelow ||
+      stats.skillAverage < config.newPlayerGuard.skillAverageBelow ||
+      stats.networth < config.newPlayerGuard.networthBelow);
 
   if (isNewPlayer) {
     const setupLineRaw = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);

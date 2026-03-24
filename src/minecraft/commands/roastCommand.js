@@ -259,7 +259,12 @@ class RoastCommand extends minecraftCommand {
         rng: Math.random
       });
 
-      await this.send(`${result.message} [${profileName}]`);
+      const compactMessage = String(result.message || "")
+        .replace(/\s*\n+\s*/g, " | ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
+      await this.send(`${compactMessage} [${profileName}]`);
     } catch (error) {
       console.error(error);
       await this.send(`[ERROR] ${error}`);
