@@ -1,5 +1,5 @@
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
 const { Embed } = require("../../contracts/embedHandler.js");
@@ -320,6 +320,7 @@ async function resolveTargetMember({ guildMembers, userOption, usernameOption, l
 function buildNavigationRow(pageIndex, totalPages, interactionId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`checkactivity:prev:${interactionId}`).setLabel("Prev").setStyle(ButtonStyle.Secondary).setDisabled(pageIndex <= 0),
+    new ButtonBuilder().setCustomId(`checkactivity:jump:${interactionId}`).setLabel("Jump").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`checkactivity:next:${interactionId}`).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(pageIndex >= totalPages - 1)
   );
 }
@@ -446,6 +447,52 @@ module.exports = {
 
       if (buttonInteraction.customId === `checkactivity:next:${interaction.id}`) {
         pageIndex = Math.min(pages.length - 1, pageIndex + 1);
+      }
+
+      if (buttonInteraction.customId === `checkactivity:jump:${interaction.id}`) {
+        const modal = new ModalBuilder().setCustomId(`checkactivity:jumpmodal:${interaction.id}`).setTitle("Jump To Page");
+        const input = new TextInputBuilder()
+          .setCustomId("page")
+          .setLabel(`Page number (1-${pages.length})`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await buttonInteraction.showModal(modal);
+
+        const modalSubmit = await buttonInteraction
+          .awaitModalSubmit({
+            time: settings.buttonTimeoutMs,
+            filter: (m) => m.customId === `checkactivity:jumpmodal:${interaction.id}` && m.user.id === interaction.user.id
+          })
+          .catch(() => null);
+
+        if (!modalSubmit) {
+          return;
+        }
+
+        const requested = parseInt(modalSubmit.fields.getTextInputValue("page"), 10);
+        if (!Number.isFinite(requested) || requested < 1 || requested > pages.length) {
+          await modalSubmit.reply({ content: `Enter a valid page between 1 and ${pages.length}.`, ephemeral: true });
+          return;
+        }
+
+        pageIndex = requested - 1;
+        const jumpEmbed = buildGuildPageEmbed({
+          pageItems: pages[pageIndex],
+          pageIndex,
+          totalPages: pages.length,
+          totalItems: filtered.length,
+          counts,
+          statusFilter,
+          sortBy
+        });
+
+        await modalSubmit.update({
+          embeds: [jumpEmbed],
+          components: [buildNavigationRow(pageIndex, pages.length, interaction.id)]
+        });
+        return;
       }
 
       const embed = buildGuildPageEmbed({
