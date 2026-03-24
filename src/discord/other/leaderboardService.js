@@ -394,7 +394,7 @@ class LeaderboardService {
         : topThree
             .map((item, index) => {
               const gain = computeGain(item, referenceSnapshot, metric);
-              return `${medals[index]} **${item.username}** — \`${formatMetricValue(metric, getMetricValue(item, metric))}\` ${getTrendLabel(gain, metric)}\n💰 ${compactNumber(
+              return `${medals[index]} **${item.username}** — \`${formatMetricValue(metric, getMetricValue(item, metric))}\` ${getTrendLabel(gain, metric)}\n⭐ ${compactNumber(
                 item.weeklyExperience
               )} • ⏱ ${formatDuration(item.playtime30dSeconds)}`;
             })
