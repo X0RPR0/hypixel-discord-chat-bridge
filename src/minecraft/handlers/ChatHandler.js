@@ -10,6 +10,7 @@ const messages = require("../../../messages.json");
 const config = require("../../../config.json");
 const { readFileSync } = require("fs");
 const updateCommand = require("../../discord/commands/updateCommand.js");
+const activityTracker = require("../../discord/other/activityTracker.js");
 
 class StateHandler extends eventHandler {
   constructor(minecraft, command, discord) {
@@ -112,8 +113,13 @@ class StateHandler extends eventHandler {
     }
 
     if (this.isLoginMessage(message)) {
+      const username = message.split(">")[1].trim().split("joined.")[0].trim();
+      const uuid = await getUUID(username).catch(() => null);
+      if (uuid) {
+        activityTracker.recordLogin(uuid);
+      }
+
       if (config.discord.other.joinMessage === true) {
-        const username = message.split(">")[1].trim().split("joined.")[0].trim();
         return this.minecraft.broadcastPlayerToggle({
           fullMessage: colouredMessage,
           username: username,
@@ -125,8 +131,13 @@ class StateHandler extends eventHandler {
     }
 
     if (this.isLogoutMessage(message)) {
+      const username = message.split(">")[1].trim().split("left.")[0].trim();
+      const uuid = await getUUID(username).catch(() => null);
+      if (uuid) {
+        activityTracker.recordLogout(uuid);
+      }
+
       if (config.discord.other.joinMessage === true) {
-        const username = message.split(">")[1].trim().split("left.")[0].trim();
         return this.minecraft.broadcastPlayerToggle({
           fullMessage: colouredMessage,
           username: username,

@@ -1,10 +1,14 @@
 const config = require("../../../config.json");
 const { unemojify } = require("node-emoji");
+const { readFileSync } = require("fs");
+const activityTracker = require("../other/activityTracker.js");
 
 class MessageHandler {
   constructor(discord, command) {
     this.discord = discord;
     this.command = command;
+    this.linkedCache = null;
+    this.linkedCacheExpiresAt = 0;
   }
 
   async onMessage(message) {
@@ -44,6 +48,8 @@ class MessageHandler {
         return;
       }
 
+      this.recordActivity(message.author.id);
+
       if (messageData.message.length > 220) {
         const messageParts = messageData.message.match(/.{1,200}/g);
         if (messageParts === null) {
@@ -66,6 +72,36 @@ class MessageHandler {
       }
 
       this.discord.broadcastMessage(messageData);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  getLinkedData() {
+    const now = Date.now();
+    if (this.linkedCache && now < this.linkedCacheExpiresAt) {
+      return this.linkedCache;
+    }
+
+    try {
+      const data = readFileSync("data/linked.json", "utf8");
+      const linked = JSON.parse(data);
+      this.linkedCache = linked && typeof linked === "object" ? linked : {};
+    } catch {
+      this.linkedCache = {};
+    }
+
+    this.linkedCacheExpiresAt = now + 60000;
+    return this.linkedCache;
+  }
+
+  recordActivity(discordId) {
+    try {
+      const linked = this.getLinkedData();
+      const uuid = Object.entries(linked).find(([, id]) => id === discordId)?.[0];
+      if (uuid) {
+        activityTracker.recordChat(uuid);
+      }
     } catch (error) {
       console.error(error);
     }

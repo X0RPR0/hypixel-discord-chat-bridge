@@ -11,6 +11,7 @@ class Application {
     if (!existsSync("./data/")) mkdirSync("./data/", { recursive: true });
     if (!existsSync("./data/linked.json")) writeFileSync("./data/linked.json", JSON.stringify({}));
     if (!existsSync("./data/inactivity.json")) writeFileSync("./data/inactivity.json", JSON.stringify({}));
+    if (!existsSync("./data/activityTracker.json")) writeFileSync("./data/activityTracker.json", JSON.stringify({ version: 1, users: {} }, null, 2));
     if (!existsSync("./data/joinRequests.json")) writeFileSync("./data/joinRequests.json", JSON.stringify({ version: 1, panelMessageId: null, requests: [] }));
   }
 

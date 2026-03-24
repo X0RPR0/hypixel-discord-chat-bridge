@@ -94,6 +94,13 @@
       "joinMessage": true,
       "autoLimbo": false
     },
+    "activity": {
+      "inactiveDays": 14,
+      "warningDays": 7,
+      "pageSize": 10,
+      "buttonTimeoutMs": 120000,
+      "apiConcurrency": 6
+    },
     "joinRequests": {
       "enabled": false,
       "forumChannelId": "FORUM_CHANNEL_ID",
@@ -182,3 +189,4 @@
     "channels": [{ "id": "CHANNEL_ID", "name": "Guild Level: {guildLevel}" }]
   }
 }
+
