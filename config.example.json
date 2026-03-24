@@ -94,6 +94,13 @@
       "joinMessage": true,
       "autoLimbo": false
     },
+    "leaderboard": {
+      "autoUpdateMinutes": 15,
+      "defaultTop": 15,
+      "maxTop": 50,
+      "defaultMetric": "score",
+      "apiConcurrency": 6
+    },
     "activity": {
       "inactiveDays": 14,
       "warningDays": 7,
@@ -189,4 +196,5 @@
     "channels": [{ "id": "CHANNEL_ID", "name": "Guild Level: {guildLevel}" }]
   }
 }
+
 

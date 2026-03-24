@@ -18,6 +18,8 @@ class StateHandler extends eventHandler {
     this.minecraft = minecraft;
     this.discord = discord;
     this.command = command;
+    this.uuidCache = new Map();
+    this.uuidCacheTtlMs = 60 * 60 * 1000;
   }
 
   registerEvents(bot) {
@@ -116,6 +118,7 @@ class StateHandler extends eventHandler {
       const username = message.split(">")[1].trim().split("joined.")[0].trim();
       const uuid = await getUUID(username).catch(() => null);
       if (uuid) {
+        this.cacheUuid(username, uuid);
         activityTracker.recordLogin(uuid);
       }
 
@@ -134,6 +137,7 @@ class StateHandler extends eventHandler {
       const username = message.split(">")[1].trim().split("left.")[0].trim();
       const uuid = await getUUID(username).catch(() => null);
       if (uuid) {
+        this.cacheUuid(username, uuid);
         activityTracker.recordLogout(uuid);
       }
 
@@ -621,6 +625,8 @@ class StateHandler extends eventHandler {
         return;
       }
 
+      await this.recordIngameChatActivity(username);
+
       this.minecraft.broadcastMessage({
         fullMessage: colouredMessage,
         chat: chatType,
@@ -936,6 +942,53 @@ class StateHandler extends eventHandler {
         return "#FFFFFF";
       default:
         return "#FFFFFF";
+    }
+  }
+
+  cacheUuid(username, uuid) {
+    if (!username || !uuid) {
+      return;
+    }
+
+    this.uuidCache.set(username.toLowerCase(), {
+      uuid,
+      expiresAt: Date.now() + this.uuidCacheTtlMs
+    });
+  }
+
+  getCachedUuid(username) {
+    if (!username) {
+      return null;
+    }
+
+    const cacheEntry = this.uuidCache.get(username.toLowerCase());
+    if (!cacheEntry) {
+      return null;
+    }
+
+    if (cacheEntry.expiresAt < Date.now()) {
+      this.uuidCache.delete(username.toLowerCase());
+      return null;
+    }
+
+    return cacheEntry.uuid;
+  }
+
+  async recordIngameChatActivity(username) {
+    try {
+      let uuid = this.getCachedUuid(username);
+      if (!uuid) {
+        uuid = await getUUID(username).catch(() => null);
+        if (!uuid) {
+          return;
+        }
+
+        this.cacheUuid(username, uuid);
+      }
+
+      activityTracker.recordChat(uuid);
+    } catch {
+      // ignore tracking errors
     }
   }
 

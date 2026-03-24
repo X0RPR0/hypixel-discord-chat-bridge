@@ -315,6 +315,7 @@ The autoLimbo is ability to toggle if the bot is sent to Limbo or stays in publi
 | mute      | Mutes the given user for a given amount of time. | `/mute [player] [time]`     | `/mute DuckySoSkilled 1h`           | ![](https://imgur.com/fQxoyHv.png) |
 | online    | View online player in the guild.                 | `/online`                   | `/online`                           | ![](https://imgur.com/Ny4vTRQ.png) |
 | checkactivity | Audit guild activity (all members or one member). | `/checkactivity [user] [username] [status] [sort]` | `/checkactivity status:inactive` | - |
+| leaderboard | Guild leaderboard preview or auto-updating setup. | `/leaderboard [metric] [setup] [top]` | `/leaderboard setup:true metric:score` | - |
 | execute   | Executes commands as the minecraft bot.          | `/execute [command]`        | `/execute /g unmute DuckySoSkilled` | ![](https://imgur.com/fBi2Bv2.png) |
 | ping      | Shows the latency of the bot.                    | `/ping`                     | `/ping`                             | ![](https://imgur.com/9sHFgGT.png) |
 | promote   | Promotes the specified user by 1 rank.           | `/promote [player]`         | `/promote DuckySoSkilled`           | ![](https://imgur.com/wmMWP5b.png) |
