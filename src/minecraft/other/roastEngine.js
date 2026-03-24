@@ -140,6 +140,16 @@ const DEFAULT_ROAST_CONFIG = {
       mild: ["{username} has not logged in for {inactiveDays}d. skill issue became login issue."],
       high: ["{inactiveDays}d offline... progression is in a coma."],
       extreme: ["{inactiveDays}d offline. account fossilized."]
+    },
+    midgame_low_sa: {
+      mild: ["{username} is level {sbLevel} with SA {skillAverage}. fundamentals got skipped."],
+      high: ["sb {sbLevel} and SA {skillAverage} is criminally undercooked."],
+      extreme: ["{username} has a midgame badge with earlygame fundamentals."]
+    },
+    core_skills_behind: {
+      mild: ["{username}'s {lowestSkillName} is only {lowestSkillValue}. that is holding the whole profile back."],
+      high: ["core skill check failed: {lowestSkillName} {lowestSkillValue}. fix the basics."],
+      extreme: ["{lineA}\n{lineB}\nthis is why progression feels cursed."]
     }
   }
 };
@@ -284,6 +294,42 @@ function evaluateRules(stats, config) {
     });
   }
 
+  if (stats.sbLevel >= 120 && avgSkill < 32) {
+    const deficit = Math.max(0, 32 - avgSkill);
+    findings.push({
+      id: "midgame_low_sa",
+      weight: 2,
+      severity: getSeverityFromValue(deficit, { high: 3, extreme: 6 }),
+      data: {
+        sbLevel: Number(stats.sbLevel.toFixed(2)),
+        skillAverage: Number(avgSkill.toFixed(2))
+      }
+    });
+  }
+
+  const coreSkills = [
+    { key: "combat", value: combat },
+    { key: "mining", value: mining },
+    { key: "farming", value: farming }
+  ];
+  const lowestCore = coreSkills.reduce((min, entry) => (entry.value < min.value ? entry : min), coreSkills[0]);
+
+  if (stats.sbLevel >= 140 && lowestCore.value < 30) {
+    const deficit = Math.max(0, 30 - lowestCore.value);
+    findings.push({
+      id: "core_skills_behind",
+      weight: 3,
+      severity: getSeverityFromValue(deficit, { high: 4, extreme: 8 }),
+      data: {
+        sbLevel: Number(stats.sbLevel.toFixed(2)),
+        lowestSkillName: titleCase(lowestCore.key),
+        lowestSkillValue: Math.floor(lowestCore.value),
+        lineA: `${titleCase(lowestCore.key)} ${Math.floor(lowestCore.value)}`,
+        lineB: "minimum core target 30"
+      }
+    });
+  }
+
   if (stats.networth >= 5000000000 && avgSkill < 32) {
     const score = (stats.networth >= 10000000000 ? 2 : 1) + (avgSkill < 30 ? 2 : 1);
     const severity = score >= 4 ? "extreme" : score >= 3 ? "high" : "mild";
@@ -351,7 +397,8 @@ function getCombo(findings) {
     ["combat_mining_gap", "dungeon_main_syndrome"],
     ["rich_low_sa", "combat_mining_gap"],
     ["fake_late_game", "activity_shame"],
-    ["one_trick_profile", "combat_farming_gap"]
+    ["one_trick_profile", "combat_farming_gap"],
+    ["midgame_low_sa", "core_skills_behind"]
   ];
 
   for (const combo of combos) {
@@ -459,9 +506,10 @@ function evaluateRoast({ stats, username, isSelf, configRoast, rng = Math.random
     stats.networth < config.newPlayerGuard.networthBelow;
 
   if (isNewPlayer) {
-    const setupLine = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);
+    const setupLineRaw = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);
+    const setupLine = interpolate(setupLineRaw, { username });
     const mainHitLine = interpolate(pickRandom(config.newPlayerReplies, rng), { username });
-    const closerLine = pickCloser(config, "NEW_PLAYER_PROTECTED", "mild", rng);
+    const closerLine = interpolate(pickCloser(config, "NEW_PLAYER_PROTECTED", "mild", rng), { username });
 
     return {
       classification: "NEW_PLAYER_PROTECTED",
@@ -473,9 +521,10 @@ function evaluateRoast({ stats, username, isSelf, configRoast, rng = Math.random
 
   const rawFindings = evaluateRules(stats, config);
   if (rawFindings.length === 0) {
-    const setupLine = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);
+    const setupLineRaw = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);
+    const setupLine = interpolate(setupLineRaw, { username });
     const mainHitLine = interpolate(pickRandom(config.noIssueReplies, rng), { username });
-    const closerLine = pickCloser(config, "NO_ISSUE", "mild", rng);
+    const closerLine = interpolate(pickCloser(config, "NO_ISSUE", "mild", rng), { username });
 
     return {
       classification: "NO_ISSUE",
@@ -510,8 +559,9 @@ function evaluateRoast({ stats, username, isSelf, configRoast, rng = Math.random
   }
 
   const setupPool = comboKey ? config.responseStructure.setup.combo : config.responseStructure.setup.default;
-  const setupLine = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(setupPool, rng);
-  const closerLine = pickCloser(config, "SKILL_ISSUE", strongestSeverity, rng);
+  const setupLineRaw = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(setupPool, rng);
+  const setupLine = interpolate(setupLineRaw, { username });
+  const closerLine = interpolate(pickCloser(config, "SKILL_ISSUE", strongestSeverity, rng), { username });
 
   return {
     classification: totalScore >= config.skillIssueScoreThreshold ? "SKILL_ISSUE" : "SKILL_ISSUE",

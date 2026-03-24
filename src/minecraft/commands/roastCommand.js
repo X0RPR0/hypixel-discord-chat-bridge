@@ -1,5 +1,6 @@
 const minecraftCommand = require("../../contracts/minecraftCommand.js");
 const { getLatestProfile } = require("../../../API/functions/getLatestProfile.js");
+const { getMuseum } = require("../../../API/functions/getMuseum.js");
 const { ProfileNetworthCalculator } = require("skyhelper-networth");
 const { getSkills } = require("../../../API/stats/skills.js");
 const { getDungeons } = require("../../../API/stats/dungeons.js");
@@ -35,6 +36,11 @@ class RoastCommand extends minecraftCommand {
       {
         name: "username",
         description: "Minecraft username",
+        required: false
+      },
+      {
+        name: "profile",
+        description: "Profile name, `latest`, or `highest`",
         required: false
       }
     ];
@@ -72,9 +78,83 @@ class RoastCommand extends minecraftCommand {
     }
   }
 
-  async buildRoastStats(targetUsername) {
-    const latest = await getLatestProfile(targetUsername, { museum: true });
-    const { username, uuid, profile, profileData, museum } = latest;
+  async resolveTargetProfile({ targetUsername, requestedProfile }) {
+    const latestData = await getLatestProfile(targetUsername);
+    const { username, uuid } = latestData;
+    const allProfiles = Array.isArray(latestData.profiles) ? latestData.profiles : [];
+    if (!allProfiles.length) {
+      throw `${username} has no SkyBlock profiles.`;
+    }
+
+    if (requestedProfile === "highest") {
+      const ranked = [];
+
+      for (const profileData of allProfiles) {
+        const profileName = profileData?.cute_name || "Unknown";
+        const profile = profileData?.members?.[uuid];
+        if (!profile) {
+          continue;
+        }
+
+        const museumResponse = await getMuseum(profileData.profile_id, uuid).catch(() => ({ museum: null }));
+        const bankingBalance = profileData?.banking?.balance ?? 0;
+        const networthManager = new ProfileNetworthCalculator(profile, museumResponse.museum, bankingBalance);
+        const networthData = await networthManager.getNetworth({ onlyNetworth: true }).catch(() => null);
+        if (!networthData || networthData.noInventory) {
+          continue;
+        }
+
+        ranked.push({
+          profileData,
+          profile,
+          museum: museumResponse.museum,
+          profileName,
+          networth: Number(networthData?.networth || 0)
+        });
+      }
+
+      if (!ranked.length) {
+        throw `${username} has Inventory API disabled on all profiles.`;
+      }
+
+      return {
+        username,
+        uuid,
+        ...ranked.sort((a, b) => b.networth - a.networth)[0]
+      };
+    }
+
+    let profileData = null;
+    if (requestedProfile === "latest") {
+      profileData = allProfiles.find((entry) => entry.selected) || allProfiles[0];
+    } else {
+      profileData = allProfiles.find((entry) => String(entry?.cute_name || "").toLowerCase() === requestedProfile);
+      if (!profileData) {
+        const availableProfiles = allProfiles.map((entry) => entry?.cute_name).filter(Boolean).join(", ");
+        throw `Profile \`${requestedProfile}\` not found. Available: ${availableProfiles || "none"}`;
+      }
+    }
+
+    const profile = profileData?.members?.[uuid];
+    if (!profile) {
+      throw "Could not find player in selected profile.";
+    }
+
+    const museumResponse = await getMuseum(profileData.profile_id, uuid).catch(() => ({ museum: null }));
+    return {
+      username,
+      uuid,
+      profile,
+      profileData,
+      museum: museumResponse.museum,
+      profileName: profileData?.cute_name || "Unknown",
+      networth: null
+    };
+  }
+
+  async buildRoastStats({ targetUsername, requestedProfile }) {
+    const selected = await this.resolveTargetProfile({ targetUsername, requestedProfile });
+    const { username, uuid, profile, profileData, museum, profileName } = selected;
 
     const skills = getSkills(profile, profileData) || {};
     const skillAverage = Number(getSkillAverage(profile, null) || 0);
@@ -97,6 +177,7 @@ class RoastCommand extends minecraftCommand {
 
     return {
       username,
+      profileName,
       stats: {
         skills,
         skillAverage,
@@ -125,15 +206,18 @@ class RoastCommand extends minecraftCommand {
       }
 
       const args = this.getArgs(message);
-      const explicitTarget = args[0] || null;
+      const firstArg = args[0];
+      const secondArg = args[1];
+      const explicitTarget = firstArg && firstArg !== "-" ? firstArg : null;
       const isSelf = !explicitTarget;
       const targetUsername = explicitTarget || player;
+      const requestedProfile = (secondArg || "latest").toLowerCase();
 
       if (explicitTarget) {
         await this.ensureGuildTarget(targetUsername, roastConfig);
       }
 
-      const { username, stats } = await this.buildRoastStats(targetUsername);
+      const { username, stats, profileName } = await this.buildRoastStats({ targetUsername, requestedProfile });
       const result = evaluateRoast({
         stats,
         username,
@@ -142,7 +226,7 @@ class RoastCommand extends minecraftCommand {
         rng: Math.random
       });
 
-      await this.send(result.message);
+      await this.send(`${result.message} [${profileName}]`);
     } catch (error) {
       console.error(error);
       await this.send(`[ERROR] ${error}`);

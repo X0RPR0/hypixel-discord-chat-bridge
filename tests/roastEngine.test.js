@@ -193,4 +193,32 @@ describe("roastEngine v3", () => {
     expect(result.comboKey).toBe("activity_shame+fake_late_game");
     expect(result.message.toLowerCase()).toContain("stacked");
   });
+
+  test("midgame profile with weak core skills is not treated as no-issue", () => {
+    const result = evaluateRoast({
+      stats: makeStats({
+        skills: {
+          combat: { levelWithProgress: 36 },
+          mining: { levelWithProgress: 28 },
+          farming: { levelWithProgress: 20 },
+          fishing: { levelWithProgress: 46 },
+          foraging: { levelWithProgress: 24 },
+          alchemy: { levelWithProgress: 16 },
+          enchanting: { levelWithProgress: 38 }
+        },
+        skillAverage: 28.8,
+        sbLevel: 184.32,
+        networth: 631000000,
+        networthFormatted: "631M",
+        cataLevel: 20,
+        inactiveDays: 1
+      }),
+      username: "TomPso11",
+      isSelf: true,
+      rng: () => 0.3
+    });
+
+    expect(result.classification).toBe("SKILL_ISSUE");
+    expect(result.findings.some((finding) => ["midgame_low_sa", "core_skills_behind"].includes(finding.id))).toBe(true);
+  });
 });
