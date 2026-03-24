@@ -41,13 +41,8 @@ function getRankupConfig() {
     },
     tiers: Array.isArray(rankup.tiers) && rankup.tiers.length > 0 ? rankup.tiers : defaults.tiers,
     allowedInvokerGuildRanks:
-      Array.isArray(rankup.allowedInvokerGuildRanks) && rankup.allowedInvokerGuildRanks.length > 0
-        ? rankup.allowedInvokerGuildRanks
-        : defaults.allowedInvokerGuildRanks,
-    protectedGuildRanks:
-      Array.isArray(rankup.protectedGuildRanks) && rankup.protectedGuildRanks.length > 0
-        ? rankup.protectedGuildRanks
-        : defaults.protectedGuildRanks
+      Array.isArray(rankup.allowedInvokerGuildRanks) && rankup.allowedInvokerGuildRanks.length > 0 ? rankup.allowedInvokerGuildRanks : defaults.allowedInvokerGuildRanks,
+    protectedGuildRanks: Array.isArray(rankup.protectedGuildRanks) && rankup.protectedGuildRanks.length > 0 ? rankup.protectedGuildRanks : defaults.protectedGuildRanks
   };
 }
 
