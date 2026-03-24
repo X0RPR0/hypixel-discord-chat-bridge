@@ -4,6 +4,7 @@ const { getMuseum } = require("../../../API/functions/getMuseum.js");
 const { ProfileNetworthCalculator } = require("skyhelper-networth");
 const { getSkills } = require("../../../API/stats/skills.js");
 const { getDungeons } = require("../../../API/stats/dungeons.js");
+const { getSlayer } = require("../../../API/stats/slayer.js");
 const { getSkillAverage } = require("../../../API/constants/skills.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
 const { formatNumber } = require("../../contracts/helperFunctions.js");
@@ -88,6 +89,7 @@ class RoastCommand extends minecraftCommand {
 
     if (requestedProfile === "highest") {
       const ranked = [];
+      const inventoryOffProfiles = [];
 
       for (const profileData of allProfiles) {
         const profileName = profileData?.cute_name || "Unknown";
@@ -101,6 +103,14 @@ class RoastCommand extends minecraftCommand {
         const networthManager = new ProfileNetworthCalculator(profile, museumResponse.museum, bankingBalance);
         const networthData = await networthManager.getNetworth({ onlyNetworth: true }).catch(() => null);
         if (!networthData || networthData.noInventory) {
+          inventoryOffProfiles.push({
+            profileData,
+            profile,
+            museum: museumResponse.museum,
+            profileName,
+            networth: 0,
+            forceInventoryApiOff: true
+          });
           continue;
         }
 
@@ -114,7 +124,23 @@ class RoastCommand extends minecraftCommand {
       }
 
       if (!ranked.length) {
-        throw `${username} has Inventory API disabled on all profiles.`;
+        const fallback =
+          inventoryOffProfiles.find((entry) => entry.profileData?.selected) ||
+          inventoryOffProfiles[0] ||
+          {
+            profileData: allProfiles.find((entry) => entry.selected) || allProfiles[0],
+            profile: (allProfiles.find((entry) => entry.selected) || allProfiles[0])?.members?.[uuid],
+            museum: null,
+            profileName: (allProfiles.find((entry) => entry.selected) || allProfiles[0])?.cute_name || "Unknown",
+            networth: 0,
+            forceInventoryApiOff: true
+          };
+
+        return {
+          username,
+          uuid,
+          ...fallback
+        };
       }
 
       return {
@@ -154,7 +180,7 @@ class RoastCommand extends minecraftCommand {
 
   async buildRoastStats({ targetUsername, requestedProfile }) {
     const selected = await this.resolveTargetProfile({ targetUsername, requestedProfile });
-    const { username, uuid, profile, profileData, museum, profileName } = selected;
+    const { username, uuid, profile, profileData, museum, profileName, forceInventoryApiOff } = selected;
 
     const skills = getSkills(profile, profileData) || {};
     const skillAverage = Number(getSkillAverage(profile, null) || 0);
@@ -163,13 +189,18 @@ class RoastCommand extends minecraftCommand {
     const bankingBalance = profileData?.banking?.balance ?? 0;
     const networthManager = new ProfileNetworthCalculator(profile, museum, bankingBalance);
     const networthData = await networthManager.getNetworth({ onlyNetworth: true }).catch(() => ({ networth: 0, purse: 0, noInventory: true }));
-
-    if (networthData.noInventory) {
-      throw `${username} has Inventory API disabled.`;
-    }
+    const inventoryApiOff = Boolean(forceInventoryApiOff || networthData.noInventory);
 
     const dungeons = getDungeons(profile);
     const cataLevel = Number(dungeons?.dungeons?.levelWithProgress ?? 0);
+    const slayer = getSlayer(profile);
+    const slayerTotal = slayer
+      ? Number(
+          ["zombie", "spider", "wolf", "enderman", "blaze", "vampire"]
+            .map((key) => Number(slayer?.[key]?.level || 0))
+            .reduce((acc, value) => acc + value, 0)
+        )
+      : 0;
 
     const hypixelPlayer = await hypixel.getPlayer(uuid, { guild: false }).catch(() => null);
     const lastLogin = hypixelPlayer?.lastLogin ? new Date(hypixelPlayer.lastLogin).getTime() : null;
@@ -185,7 +216,9 @@ class RoastCommand extends minecraftCommand {
         networth: Number(networthData?.networth || 0),
         networthFormatted: formatNumber(networthData?.networth || 0),
         cataLevel,
-        inactiveDays
+        slayerTotal,
+        inactiveDays,
+        inventoryApiOff
       }
     };
   }

@@ -150,8 +150,105 @@ const DEFAULT_ROAST_CONFIG = {
       mild: ["{username}'s {lowestSkillName} is only {lowestSkillValue}. that is holding the whole profile back."],
       high: ["core skill check failed: {lowestSkillName} {lowestSkillValue}. fix the basics."],
       extreme: ["{lineA}\n{lineB}\nthis is why progression feels cursed."]
+    },
+    stage_core_floor: {
+      mild: ["{username} is SB {sbLevel} but {lowestCoreName} is only {lowestCoreValue}. stage floor is {target}."],
+      high: ["{lowestCoreName} {lowestCoreValue} at SB {sbLevel}? bracket floor is {target}."],
+      extreme: ["{lineA}\n{lineB}\ncore progression failed the stage check."]
+    },
+    stage_utility_floor: {
+      mild: ["utility check says {lowestUtilityName} {lowestUtilityValue}, target {target} for this stage."],
+      high: ["{username} skipped utility skill leveling: {lowestUtilityName} {lowestUtilityValue} < {target}."],
+      extreme: ["{lineA}\n{lineB}\nthis utility gap is griefing your progression."]
+    },
+    stage_sa_floor: {
+      mild: ["SB {sbLevel} with SA {skillAverage}. stage target is {target}."],
+      high: ["SA {skillAverage} is under the {target} floor for this bracket."],
+      extreme: ["{lineA}\n{lineB}\nstage average is nowhere near ready."]
+    },
+    stage_networth_floor: {
+      mild: ["{username} is SB {sbLevel} with only {networth}. stage wealth target is {targetNetworth}."],
+      high: ["{networth} networth at this stage is undercooked."],
+      extreme: ["{lineA}\n{lineB}\nthis economy is still tutorial mode."]
+    },
+    stage_cata_floor: {
+      mild: ["cata {cata} is below stage target {target}."],
+      high: ["SB {sbLevel} with cata {cata} is behind the bracket curve ({target})."],
+      extreme: ["{lineA}\n{lineB}\ndungeon progression is missing."]
+    },
+    stage_slayer_floor: {
+      mild: ["slayer total {slayerTotal} is low for this stage ({target})."],
+      high: ["{username} skipped slayers: {slayerTotal} < {target}."],
+      extreme: ["{lineA}\n{lineB}\nslayer progression is absent."]
+    },
+    endgame_nonmax: {
+      mild: ["endgame check: {worstSkillName} {worstSkillValue} is still below near-max target {target}."],
+      high: ["SB {sbLevel} endgame with {worstSkillName} {worstSkillValue} is not near max ({target})."],
+      extreme: ["{lineA}\n{lineB}\nendgame badge without endgame skills."]
+    },
+    endgame_rich_not_maxed: {
+      mild: ["{username} has {networth} but still not near-maxed."],
+      high: ["{networth} networth and {worstSkillName} {worstSkillValue}. rich but unfinished."],
+      extreme: ["{lineA}\n{lineB}\nwealth cannot hide this gap."]
+    },
+    inventory_api_off: {
+      mild: ["inventory api is off, so progression is hiding behind privacy settings."],
+      high: ["{username} turned inventory api off. suspicious behavior detected."],
+      extreme: ["inventory api off\nprofile hidden\nthat says enough."]
+    },
+    ceiling_pressure: {
+      mild: ["no catastrophic issue, but this profile is still leaving free progress on the table."],
+      high: ["{username} is stable, not sharp. optimization debt is massive."],
+      extreme: ["{lineA}\n{lineB}\nprofile is coasting too hard."]
     }
   }
+};
+
+const STAGE_PACKS = [
+  {
+    key: "lt100",
+    min: 0,
+    max: 99.999,
+    floors: { core: 15, utility: 10, sa: 18, networth: 50000000, cata: 8, slayerTotal: 8 }
+  },
+  {
+    key: "100_199",
+    min: 100,
+    max: 199.999,
+    floors: { core: 28, utility: 16, sa: 30, networth: 500000000, cata: 18, slayerTotal: 18 }
+  },
+  {
+    key: "200_299",
+    min: 200,
+    max: 299.999,
+    floors: { core: 38, utility: 26, sa: 38, networth: 2000000000, cata: 28, slayerTotal: 28 }
+  },
+  {
+    key: "300_399",
+    min: 300,
+    max: 399.999,
+    floors: { core: 46, utility: 34, sa: 46, networth: 5000000000, cata: 36, slayerTotal: 38 }
+  },
+  {
+    key: "400_500",
+    min: 400,
+    max: Number.POSITIVE_INFINITY,
+    floors: { core: 54, utility: 42, sa: 52, networth: 10000000000, cata: 42, slayerTotal: 45 }
+  }
+];
+
+const SKILL_CAPS = {
+  combat: 60,
+  mining: 60,
+  farming: 60,
+  enchanting: 60,
+  taming: 60,
+  foraging: 50,
+  fishing: 50,
+  alchemy: 50,
+  carpentry: 50,
+  runecrafting: 25,
+  social: 25
 };
 
 function pickRandom(list, rng = Math.random) {
@@ -233,6 +330,178 @@ function mergeRoastConfig(configRoast) {
   return config;
 }
 
+function resolveStagePack(sbLevel) {
+  return STAGE_PACKS.find((stage) => sbLevel >= stage.min && sbLevel <= stage.max) || STAGE_PACKS[0];
+}
+
+function evaluateStageRules({ stats, skills, avgSkill, stagePack }) {
+  const findings = [];
+  const sbLevelRounded = Number((stats.sbLevel || 0).toFixed(2));
+  const coreSkills = ["combat", "mining", "farming", "fishing", "foraging"];
+  const utilitySkills = ["enchanting", "alchemy", "taming", "carpentry"];
+
+  const coreEntries = coreSkills.map((key) => ({ key, value: getSkill(skills, key) }));
+  const utilityEntries = utilitySkills.map((key) => ({ key, value: getSkill(skills, key) }));
+  const lowestCore = coreEntries.reduce((acc, entry) => (entry.value < acc.value ? entry : acc), coreEntries[0]);
+  const lowestUtility = utilityEntries.reduce((acc, entry) => (entry.value < acc.value ? entry : acc), utilityEntries[0]);
+
+  if (lowestCore.value < stagePack.floors.core) {
+    const deficit = stagePack.floors.core - lowestCore.value;
+    findings.push({
+      id: "stage_core_floor",
+      weight: 4,
+      severity: getSeverityFromValue(deficit, { high: 8, extreme: 14 }),
+      data: {
+        sbLevel: sbLevelRounded,
+        lowestCoreName: titleCase(lowestCore.key),
+        lowestCoreValue: Math.floor(lowestCore.value),
+        target: stagePack.floors.core,
+        lineA: `${titleCase(lowestCore.key)} ${Math.floor(lowestCore.value)}`,
+        lineB: `target ${stagePack.floors.core}`
+      }
+    });
+  }
+
+  if (lowestUtility.value < stagePack.floors.utility) {
+    const deficit = stagePack.floors.utility - lowestUtility.value;
+    findings.push({
+      id: "stage_utility_floor",
+      weight: 3,
+      severity: getSeverityFromValue(deficit, { high: 8, extreme: 14 }),
+      data: {
+        sbLevel: sbLevelRounded,
+        lowestUtilityName: titleCase(lowestUtility.key),
+        lowestUtilityValue: Math.floor(lowestUtility.value),
+        target: stagePack.floors.utility,
+        lineA: `${titleCase(lowestUtility.key)} ${Math.floor(lowestUtility.value)}`,
+        lineB: `target ${stagePack.floors.utility}`
+      }
+    });
+  }
+
+  if (avgSkill < stagePack.floors.sa) {
+    const deficit = stagePack.floors.sa - avgSkill;
+    findings.push({
+      id: "stage_sa_floor",
+      weight: 4,
+      severity: getSeverityFromValue(deficit, { high: 4, extreme: 8 }),
+      data: {
+        sbLevel: sbLevelRounded,
+        skillAverage: Number(avgSkill.toFixed(2)),
+        target: stagePack.floors.sa,
+        lineA: `SA ${Number(avgSkill.toFixed(2))}`,
+        lineB: `target ${stagePack.floors.sa}`
+      }
+    });
+  }
+
+  if (!stats.inventoryApiOff && Number(stats.networth || 0) < stagePack.floors.networth) {
+    const ratio = stagePack.floors.networth <= 0 ? 0 : Number(stats.networth || 0) / stagePack.floors.networth;
+    findings.push({
+      id: "stage_networth_floor",
+      weight: 2,
+      severity: ratio < 0.35 ? "extreme" : ratio < 0.65 ? "high" : "mild",
+      data: {
+        sbLevel: sbLevelRounded,
+        networth: stats.networthFormatted || "0",
+        targetNetworth: `${Math.round(stagePack.floors.networth / 100000000) / 10}B`,
+        lineA: `networth ${stats.networthFormatted || "0"}`,
+        lineB: `target ${Math.round(stagePack.floors.networth / 100000000) / 10}B`
+      }
+    });
+  }
+
+  if (Number(stats.cataLevel || 0) < stagePack.floors.cata) {
+    const deficit = stagePack.floors.cata - Number(stats.cataLevel || 0);
+    findings.push({
+      id: "stage_cata_floor",
+      weight: 2,
+      severity: getSeverityFromValue(deficit, { high: 8, extreme: 14 }),
+      data: {
+        sbLevel: sbLevelRounded,
+        cata: Number((stats.cataLevel || 0).toFixed(2)),
+        target: stagePack.floors.cata,
+        lineA: `cata ${Number((stats.cataLevel || 0).toFixed(2))}`,
+        lineB: `target ${stagePack.floors.cata}`
+      }
+    });
+  }
+
+  if (Number(stats.slayerTotal || 0) < stagePack.floors.slayerTotal) {
+    const deficit = stagePack.floors.slayerTotal - Number(stats.slayerTotal || 0);
+    findings.push({
+      id: "stage_slayer_floor",
+      weight: 2,
+      severity: getSeverityFromValue(deficit, { high: 8, extreme: 16 }),
+      data: {
+        sbLevel: sbLevelRounded,
+        slayerTotal: Math.floor(Number(stats.slayerTotal || 0)),
+        target: stagePack.floors.slayerTotal,
+        lineA: `slayer ${Math.floor(Number(stats.slayerTotal || 0))}`,
+        lineB: `target ${stagePack.floors.slayerTotal}`
+      }
+    });
+  }
+
+  if (stagePack.key === "400_500") {
+    const nearMaxTargets = {
+      combat: SKILL_CAPS.combat - 2,
+      mining: SKILL_CAPS.mining - 2,
+      farming: SKILL_CAPS.farming - 2,
+      enchanting: SKILL_CAPS.enchanting - 2,
+      taming: SKILL_CAPS.taming - 2,
+      foraging: SKILL_CAPS.foraging - 3,
+      fishing: SKILL_CAPS.fishing - 3,
+      alchemy: SKILL_CAPS.alchemy - 3,
+      carpentry: SKILL_CAPS.carpentry - 3
+    };
+
+    let worst = { key: "combat", value: Number.POSITIVE_INFINITY, target: 0, deficit: 0 };
+    for (const [skill, target] of Object.entries(nearMaxTargets)) {
+      const value = getSkill(skills, skill);
+      const deficit = target - value;
+      if (deficit > worst.deficit) {
+        worst = { key: skill, value, target, deficit };
+      }
+    }
+
+    if (worst.deficit > 0) {
+      findings.push({
+        id: "endgame_nonmax",
+        weight: 5,
+        severity: getSeverityFromValue(worst.deficit, { high: 6, extreme: 11 }),
+        data: {
+          sbLevel: sbLevelRounded,
+          worstSkillName: titleCase(worst.key),
+          worstSkillValue: Math.floor(worst.value),
+          target: worst.target,
+          lineA: `${titleCase(worst.key)} ${Math.floor(worst.value)}`,
+          lineB: `target ${worst.target}`
+        }
+      });
+
+      if (!stats.inventoryApiOff && Number(stats.networth || 0) >= 8000000000) {
+        findings.push({
+          id: "endgame_rich_not_maxed",
+          weight: 5,
+          severity: worst.deficit >= 10 ? "extreme" : "high",
+          data: {
+            sbLevel: sbLevelRounded,
+            networth: stats.networthFormatted || "0",
+            worstSkillName: titleCase(worst.key),
+            worstSkillValue: Math.floor(worst.value),
+            target: worst.target,
+            lineA: `${titleCase(worst.key)} ${Math.floor(worst.value)}`,
+            lineB: `${stats.networthFormatted || "0"} networth`
+          }
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
 function evaluateRules(stats, config) {
   const skills = stats.skills || {};
   const combat = getSkill(skills, "combat");
@@ -248,6 +517,20 @@ function evaluateRules(stats, config) {
 
   const findings = [];
   const minGaps = config?.minGaps || DEFAULT_ROAST_CONFIG.minGaps;
+  const stagePack = resolveStagePack(Number(stats.sbLevel || 0));
+
+  findings.push(...evaluateStageRules({ stats, skills, avgSkill, stagePack }));
+
+  if (stats.inventoryApiOff) {
+    findings.push({
+      id: "inventory_api_off",
+      weight: 4,
+      severity: "high",
+      data: {
+        sbLevel: Number((stats.sbLevel || 0).toFixed(2))
+      }
+    });
+  }
 
   const combatMiningGap = combat - mining;
   if (combat >= 50 && combatMiningGap >= minGaps.combatMiningGap) {
@@ -387,12 +670,30 @@ function evaluateRules(stats, config) {
     });
   }
 
+  if (findings.length === 0 && Number(stats.sbLevel || 0) >= 100) {
+    const severity = stats.sbLevel >= 400 ? "high" : "mild";
+    findings.push({
+      id: "ceiling_pressure",
+      weight: 2,
+      severity,
+      data: {
+        sbLevel: Number((stats.sbLevel || 0).toFixed(2)),
+        lineA: `SB ${Number((stats.sbLevel || 0).toFixed(2))}`,
+        lineB: "plateau detected"
+      }
+    });
+  }
+
   return findings;
 }
 
 function getCombo(findings) {
   const ids = new Set(findings.map((finding) => finding.id));
   const combos = [
+    ["stage_core_floor", "stage_sa_floor"],
+    ["stage_utility_floor", "stage_sa_floor"],
+    ["endgame_nonmax", "endgame_rich_not_maxed"],
+    ["inventory_api_off", "stage_sa_floor"],
     ["rich_low_sa", "one_trick_profile"],
     ["combat_mining_gap", "dungeon_main_syndrome"],
     ["rich_low_sa", "combat_mining_gap"],
@@ -503,7 +804,7 @@ function evaluateRoast({ stats, username, isSelf, configRoast, rng = Math.random
   const isNewPlayer =
     stats.sbLevel < config.newPlayerGuard.sbLevelBelow ||
     stats.skillAverage < config.newPlayerGuard.skillAverageBelow ||
-    stats.networth < config.newPlayerGuard.networthBelow;
+    (!stats.inventoryApiOff && stats.networth < config.newPlayerGuard.networthBelow);
 
   if (isNewPlayer) {
     const setupLineRaw = isSelf ? pickRandom(config.selfIntroLines, rng) : pickRandom(config.responseStructure.setup.default, rng);
@@ -577,6 +878,7 @@ module.exports = {
   mergeRoastConfig,
   _private: {
     evaluateRules,
+    resolveStagePack,
     getCombo,
     prioritizeFindings,
     getSeverityFromValue,
