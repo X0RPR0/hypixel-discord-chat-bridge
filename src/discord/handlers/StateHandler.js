@@ -21,6 +21,7 @@ class StateHandler {
 
     if (config.verification.inactivity.enabled) require("../other/removeExpiredInactivity.js");
     if (config.verification.autoRoleUpdater.enabled) require("../other/updateUsers.js");
+    if (config.rankup?.enabled && config.rankup?.dailySync?.enabled) require("../other/rankupDailySync.js");
     if (config.statsChannels.enabled) require("../other/statsChannels.js");
     await this.discord.joinRequestManager.initialize();
 

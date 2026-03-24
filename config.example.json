@@ -142,6 +142,34 @@
       "maxInactivityTime": 30
     }
   },
+  "rankup": {
+    "enabled": false,
+    "manual": {
+      "minecraftEnabled": true,
+      "discordEnabled": true
+    },
+    "dailySync": {
+      "enabled": false,
+      "hour": 3,
+      "minute": 0
+    },
+    "tiers": [
+      {
+        "minSkyblockLevel": 300,
+        "guildRank": "Draconian"
+      },
+      {
+        "minSkyblockLevel": 150,
+        "guildRank": "Dusk"
+      },
+      {
+        "minSkyblockLevel": 0,
+        "guildRank": "Shadow"
+      }
+    ],
+    "allowedInvokerGuildRanks": ["Guild Master", "Slayer"],
+    "protectedGuildRanks": ["Guild Master", "Slayer"]
+  },
   "other": {
     "autoUpdater": true,
     "autoUpdaterInterval": 12,

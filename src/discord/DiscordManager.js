@@ -53,15 +53,19 @@ class DiscordManager extends CommunicationBridge {
 
   async getWebhook(discord, type) {
     const channel = await this.stateHandler.getChannel(type);
+    if (channel === undefined) {
+      return;
+    }
+
     try {
       const webhooks = await channel.fetchWebhooks();
 
       if (webhooks.size === 0) {
-        channel.createWebhook({
+        await channel.createWebhook({
           name: "Hypixel Chat Bridge"
         });
-
-        await this.getWebhook(discord, type);
+        const refreshedWebhooks = await channel.fetchWebhooks();
+        return refreshedWebhooks.first();
       }
 
       return webhooks.first();
@@ -127,16 +131,21 @@ class DiscordManager extends CommunicationBridge {
           return;
         }
 
-        this.app.discord.webhook = await this.getWebhook(this.app.discord, chatType);
+        this.app.discord.webhook = await this.getWebhook(this.app.discord, chatType || chat || "Guild");
         if (this.app.discord.webhook === undefined) {
+          console.error(`Webhook unavailable for channel type "${chatType || chat || "Guild"}".`);
           return;
         }
 
-        this.app.discord.webhook.send({
-          content: message,
-          username: username,
-          avatarURL: `https://www.mc-heads.net/avatar/${username}`
-        });
+        await this.app.discord.webhook
+          .send({
+            content: message,
+            username: username,
+            avatarURL: `https://www.mc-heads.net/avatar/${username}`
+          })
+          .catch((error) => {
+            console.error(error);
+          });
         break;
 
       case "minecraft":
