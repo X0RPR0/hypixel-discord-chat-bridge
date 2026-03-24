@@ -1,13 +1,19 @@
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
-const { getUUID } = require("../../contracts/API/mowojangAPI.js");
+const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { Embed } = require("../../contracts/embedHandler.js");
 const activityTracker = require("../other/activityTracker.js");
 const { readFileSync } = require("fs");
 const config = require("../../../config.json");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const AUTOCOMPLETE_CACHE_MS = 10 * 60 * 1000;
+const usernameAutocompleteCache = {
+  usernames: [],
+  expiresAt: 0,
+  refreshing: false
+};
 
 function getActivityConfig() {
   const defaults = {
@@ -325,12 +331,66 @@ function buildNavigationRow(pageIndex, totalPages, interactionId) {
   );
 }
 
+async function refreshGuildUsernameCache() {
+  if (usernameAutocompleteCache.refreshing) {
+    return;
+  }
+
+  usernameAutocompleteCache.refreshing = true;
+  try {
+    const guild = await hypixel.getGuild("player", bot.username, { noCaching: true, noCacheCheck: true });
+    const members = guild?.members || [];
+    if (members.length === 0) {
+      usernameAutocompleteCache.expiresAt = Date.now() + AUTOCOMPLETE_CACHE_MS;
+      return;
+    }
+
+    const maybeNames = members
+      .map((member) => member.nickname || member.name || null)
+      .filter((value) => typeof value === "string" && value.length > 0);
+
+    let usernames = [];
+    if (maybeNames.length > 0) {
+      usernames = maybeNames;
+    } else {
+      const settings = getActivityConfig();
+      usernames = await runWithConcurrency(members, settings.apiConcurrency, async (member) => {
+        try {
+          return await getUsername(member.uuid);
+        } catch {
+          return null;
+        }
+      });
+    }
+
+    usernameAutocompleteCache.usernames = [...new Set(usernames.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    usernameAutocompleteCache.expiresAt = Date.now() + AUTOCOMPLETE_CACHE_MS;
+  } catch {
+    usernameAutocompleteCache.expiresAt = Date.now() + 60000;
+  } finally {
+    usernameAutocompleteCache.refreshing = false;
+  }
+}
+
+async function getAutocompleteUsernames() {
+  const now = Date.now();
+  if (usernameAutocompleteCache.usernames.length > 0 && now < usernameAutocompleteCache.expiresAt) {
+    return usernameAutocompleteCache.usernames;
+  }
+
+  if (!usernameAutocompleteCache.refreshing) {
+    await refreshGuildUsernameCache();
+  }
+
+  return usernameAutocompleteCache.usernames;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("checkactivity")
     .setDescription("Audit guild member activity or check one member.")
     .addUserOption((option) => option.setName("user").setDescription("Discord user to check"))
-    .addStringOption((option) => option.setName("username").setDescription("Minecraft username to check"))
+    .addStringOption((option) => option.setName("username").setDescription("Minecraft username to check").setAutocomplete(true))
     .addStringOption((option) =>
       option
         .setName("status")
@@ -356,6 +416,22 @@ module.exports = {
     ),
   moderatorOnly: true,
   requiresBot: true,
+  autocomplete: async (interaction) => {
+    try {
+      const focused = String(interaction.options.getFocused() || "")
+        .trim()
+        .toLowerCase();
+      const usernames = await getAutocompleteUsernames();
+      const matches = usernames
+        .filter((name) => name.toLowerCase().includes(focused))
+        .slice(0, 25)
+        .map((name) => ({ name, value: name }));
+
+      await interaction.respond(matches);
+    } catch {
+      await interaction.respond([]);
+    }
+  },
 
   execute: async (interaction) => {
     const userOption = interaction.options.getUser("user");
@@ -528,6 +604,7 @@ module.exports = {
           components: [
             new ActionRowBuilder().addComponents(
               new ButtonBuilder().setCustomId(`checkactivity:prev:${interaction.id}:disabled`).setLabel("Prev").setStyle(ButtonStyle.Secondary).setDisabled(true),
+              new ButtonBuilder().setCustomId(`checkactivity:jump:${interaction.id}:disabled`).setLabel("Jump").setStyle(ButtonStyle.Secondary).setDisabled(true),
               new ButtonBuilder().setCustomId(`checkactivity:next:${interaction.id}:disabled`).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(true)
             )
           ]

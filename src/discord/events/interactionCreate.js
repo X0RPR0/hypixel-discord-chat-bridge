@@ -13,6 +13,15 @@ module.exports = {
    */
   async execute(interaction) {
     try {
+      if (interaction.isAutocomplete()) {
+        const command = interaction.client.commands.get(interaction.commandName);
+        if (!command || typeof command.autocomplete !== "function") {
+          return interaction.respond([]).catch(() => {});
+        }
+
+        return command.autocomplete(interaction);
+      }
+
       if (interaction.isChatInputCommand()) {
         const memberRoles = interaction.member.roles.cache.map((role) => role.id);
         const command = interaction.client.commands.get(interaction.commandName);
@@ -95,6 +104,11 @@ module.exports = {
       }
     } catch (error) {
       console.error(error);
+      if (interaction.isAutocomplete?.()) {
+        await interaction.respond([]).catch(() => {});
+        return;
+      }
+
       const errrorMessage = error instanceof HypixelDiscordChatBridgeError ? "" : "Please try again later. The error has been sent to the Developers.\n\n";
 
       const errorEmbed = new ErrorEmbed(`${errrorMessage}\`\`\`${error}\`\`\``);
