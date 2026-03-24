@@ -7,9 +7,9 @@ const DEFAULT_ROAST_CONFIG = {
   cooldownSeconds: 20,
   skillIssueScoreThreshold: 4,
   newPlayerGuard: {
-    sbLevelBelow: 60,
-    skillAverageBelow: 20,
-    networthBelow: 100000000
+    sbLevelBelow: 30,
+    skillAverageBelow: 12,
+    networthBelow: 25000000
   },
   qualityFilter: {
     minPriorityForSpecific: 4,
