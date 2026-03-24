@@ -15,6 +15,9 @@ class Application {
     if (!existsSync("./data/leaderboard.json")) {
       writeFileSync("./data/leaderboard.json", JSON.stringify({ version: 1, channelId: null, messageId: null, metric: "score", top: 15, lastSnapshot: null, snapshots: [] }, null, 2));
     }
+    if (!existsSync("./roastConfig.json")) {
+      writeFileSync("./roastConfig.json", JSON.stringify({}, null, 2));
+    }
     if (!existsSync("./data/joinRequests.json")) writeFileSync("./data/joinRequests.json", JSON.stringify({ version: 1, panelMessageId: null, requests: [] }));
   }
 

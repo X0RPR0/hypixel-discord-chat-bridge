@@ -1,0 +1,234 @@
+{
+  "enabled": true,
+  "guildOnlyTargets": true,
+  "profileMode": "latest",
+  "cooldownSeconds": 20,
+  "skillIssueScoreThreshold": 4,
+  "newPlayerGuard": {
+    "sbLevelBelow": 60,
+    "skillAverageBelow": 20,
+    "networthBelow": 100000000
+  },
+  "qualityFilter": {
+    "minPriorityForSpecific": 4,
+    "mildSingleRuleFallback": true
+  },
+  "nukeChance": 0.05,
+  "priorityBoosts": {
+    "self": 2,
+    "extreme": 3,
+    "combo": 2
+  },
+  "responseStructure": {
+    "setup": {
+      "default": [
+        "alright {username}, let us check this crime scene.",
+        "stat check time for {username}...",
+        "pulling up {username}'s profile for scientific bullying."
+      ],
+      "combo": [
+        "this is a two-for-one special, {username}.",
+        "okay {username}, this combo is genuinely nasty.",
+        "bro stacked issues like enchantments, {username}."
+      ]
+    },
+    "closer": {
+      "mild": [
+        "skill issue aint fixing itself, start grinding.",
+        "small fix, big improvement. get to work.",
+        "you are one detour away from being decent."
+      ],
+      "high": [
+        "stop dodging progression and fix it.",
+        "this build is held together by cope.",
+        "respectfully, go grind the basics."
+      ],
+      "extreme": [
+        "drop everything and repair your profile.",
+        "this is not a build, it is a warning sign.",
+        "full rebuild angle. now."
+      ],
+      "noIssue": [
+        "annoyingly balanced. go outside.",
+        "no easy angle today. touch grass.",
+        "you win this round. unfortunately."
+      ],
+      "newPlayer": [
+        "enjoy immunity while it lasts.",
+        "you are protected... for now.",
+        "rookie shield active. temporary."
+      ]
+    }
+  },
+  "selfIntroLines": [
+    "you asked for this",
+    "bro snitched on himself",
+    "self report detected"
+  ],
+  "noIssueReplies": [
+    "i tried finding a skill issue but this is annoyingly balanced.",
+    "no roast today... and i hate that for me.",
+    "this profile is suspiciously normal."
+  ],
+  "newPlayerReplies": [
+    "you are still early game, i will allow it... for now",
+    "new player immunity activated. come back after some grind.",
+    "too fresh to roast properly. enjoy your grace period."
+  ],
+  "genericRoastReplies": [
+    "there is definitely a skill issue in here somewhere, go grind fundamentals.",
+    "progression looking shaky, fix the basics first.",
+    "this profile needs less ego and more consistency."
+  ],
+  "nukeLines": [
+    "{lineA}\\n{lineB}\\nwhy",
+    "{lineA}\\n{lineB}\\nexplain",
+    "{lineA}\\n{lineB}\\nthis cannot be real"
+  ],
+  "comboTemplates": {
+    "one_trick_profile+rich_low_sa": {
+      "mild": [
+        "{username} has money and one skill. progression forgot to load."
+      ],
+      "high": [
+        "{username} is rich, one-trick, and somehow still undercooked."
+      ],
+      "extreme": [
+        "{username} got rich without building a profile. this is fraud."
+      ]
+    },
+    "combat_mining_gap+dungeon_main_syndrome": {
+      "mild": [
+        "{username} min-maxed combat and forgot everything else exists."
+      ],
+      "high": [
+        "{username} lives in dungeons and still refuses to mine. wild."
+      ],
+      "extreme": [
+        "{username} is dungeon-locked with a mining allergy. emergency."
+      ]
+    },
+    "combat_mining_gap+rich_low_sa": {
+      "mild": [
+        "{username} has coins and still skipped mining. elite shortcut energy."
+      ],
+      "high": [
+        "{username} got rich before learning mining. fraud progression."
+      ],
+      "extreme": [
+        "{username} is proof money cannot buy progression."
+      ]
+    },
+    "activity_shame+fake_late_game": {
+      "mild": [
+        "{username} is late-game on paper and offline in practice."
+      ],
+      "high": [
+        "{username} has fake late-game stats and a login cooldown."
+      ],
+      "extreme": [
+        "{username} built a late-game profile just to abandon it."
+      ]
+    },
+    "combat_farming_gap+one_trick_profile": {
+      "mild": [
+        "{username} one-tricked combat and left farming in beta."
+      ],
+      "high": [
+        "{username} built a combat personality and forgot crops exist."
+      ],
+      "extreme": [
+        "{username} is combat 1-trick propaganda."
+      ]
+    }
+  },
+  "roastTemplatesByRule": {
+    "combat_mining_gap": {
+      "mild": [
+        "{username} combat {combat} vs mining {mining}... maybe buy a pickaxe."
+      ],
+      "high": [
+        "combat {combat} and mining {mining}? bro discovered half the game."
+      ],
+      "extreme": [
+        "{lineA}\\n{lineB}\\nthis gap is a lifestyle choice."
+      ]
+    },
+    "combat_farming_gap": {
+      "mild": [
+        "{username} fights everything but farms nothing."
+      ],
+      "high": [
+        "combat {combat}, farming {farming}. potatoes are scared of you too?"
+      ],
+      "extreme": [
+        "{lineA}\\n{lineB}\\nfarming got abandoned."
+      ]
+    },
+    "one_trick_profile": {
+      "mild": [
+        "{username} built a profile around one skill and vibes."
+      ],
+      "high": [
+        "{username} did not build a profile, just a one-skill personality."
+      ],
+      "extreme": [
+        "{username} is a one-trick documentary."
+      ]
+    },
+    "rich_low_sa": {
+      "mild": [
+        "{username} has coins but forgot to buy progression."
+      ],
+      "high": [
+        "{username} has {networth} networth and SA {skillAverage}. wealth fraud."
+      ],
+      "extreme": [
+        "{username} got rich and skipped the game."
+      ]
+    },
+    "fake_late_game": {
+      "mild": [
+        "{username} has late-game vibes with early-game utility skills."
+      ],
+      "high": [
+        "{username} is high level but still ducking alchemy/enchanting."
+      ],
+      "extreme": [
+        "late-game title, tutorial utility skills."
+      ]
+    },
+    "dungeon_main_syndrome": {
+      "mild": [
+        "{username} is a little too comfy in dungeons."
+      ],
+      "high": [
+        "cata {cata} and SA {skillAverage} is not the flex you think."
+      ],
+      "extreme": [
+        "{username} lives in dungeons because outside is scary."
+      ]
+    },
+    "activity_shame": {
+      "mild": [
+        "{username} has not logged in for {inactiveDays}d. skill issue became login issue."
+      ],
+      "high": [
+        "{inactiveDays}d offline... progression is in a coma."
+      ],
+      "extreme": [
+        "{inactiveDays}d offline. account fossilized."
+      ]
+    }
+  },
+  "minGaps": {
+    "combatMiningGap": 15,
+    "combatFarmingGap": 15,
+    "oneTrickGap": 20
+  },
+  "severityMultipliers": {
+    "mild": 1,
+    "high": 1.35,
+    "extreme": 1.75
+  }
+}
