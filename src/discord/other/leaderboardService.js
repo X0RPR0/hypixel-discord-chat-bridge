@@ -155,6 +155,41 @@ function formatMetricValue(metric, value) {
   }
 }
 
+function getMetricLabel(metric) {
+  switch (metric) {
+    case "gexp":
+      return "GEXP";
+    case "chat_30d":
+      return "Chat 30d";
+    case "playtime_30d":
+      return "Playtime 30d";
+    case "score":
+    default:
+      return "Score";
+  }
+}
+
+function getTrendLabel(gain, metric) {
+  if (gain > 0) {
+    return `⬆️ +${formatMetricValue(metric, gain)}`;
+  }
+
+  if (gain < 0) {
+    return `⬇️ ${formatMetricValue(metric, gain)}`;
+  }
+
+  return "⏸ 0";
+}
+
+function chunk(items, size) {
+  const output = [];
+  for (let i = 0; i < items.length; i += size) {
+    output.push(items.slice(i, i + size));
+  }
+
+  return output;
+}
+
 function findReferenceSnapshot(snapshots, nowTs) {
   if (!Array.isArray(snapshots) || snapshots.length === 0) {
     return null;
@@ -349,29 +384,56 @@ class LeaderboardService {
   buildEmbed({ metric, top, members, referenceSnapshot, nowTs = Date.now() }) {
     const sorted = sortLeaderboard(members, metric);
     const selected = sorted.slice(0, top);
+    const topThree = selected.slice(0, 3);
+    const rest = selected.slice(3);
+    const medals = ["🥇", "🥈", "🥉"];
 
-    const rows = selected.map((item, index) => {
-      const gain = computeGain(item, referenceSnapshot, metric);
-      const gainPrefix = gain > 0 ? "+" : "";
-      const last = item.daysSinceActivity === null ? "?" : `${item.daysSinceActivity}d`;
+    const topThreeBlock =
+      topThree.length === 0
+        ? "No members found."
+        : topThree
+            .map((item, index) => {
+              const gain = computeGain(item, referenceSnapshot, metric);
+              return `${medals[index]} **${item.username}** — \`${formatMetricValue(metric, getMetricValue(item, metric))}\` ${getTrendLabel(gain, metric)}\n💰 ${compactNumber(
+                item.weeklyExperience
+              )} • ⏱ ${formatDuration(item.playtime30dSeconds)}`;
+            })
+            .join("\n\n");
 
-      return `${index + 1}. **${item.username}** - \`${formatMetricValue(metric, getMetricValue(item, metric))}\` (\`${gainPrefix}${formatMetricValue(
-        metric,
-        gain
-      )}\`) | G:\`${compactNumber(item.weeklyExperience)}\` C:\`${compactNumber(item.chat30d)}\` P:\`${formatDuration(item.playtime30dSeconds)}\` L:\`${last}\``;
+    const restFields = chunk(rest, 7).map((group, groupIndex) => {
+      const startRank = 4 + groupIndex * 7;
+      const endRank = startRank + group.length - 1;
+      const value = group
+        .map((item, index) => {
+          const rank = startRank + index;
+          return `\`${rank}.\` **${item.username}** \`${formatMetricValue(metric, getMetricValue(item, metric))}\``;
+        })
+        .join("\n");
+
+      return {
+        name: `Rankings ${startRank}-${endRank}`,
+        value: value || "No data",
+        inline: false
+      };
     });
 
-    const description = rows.length > 0 ? rows.join("\n") : "No members found.";
     const refText = referenceSnapshot?.ts ? `<t:${Math.floor(referenceSnapshot.ts / 1000)}:R>` : "not enough history";
+    const metricLabel = getMetricLabel(metric);
+    const updated = new Date(nowTs).toUTCString().replace(" GMT", " UTC");
 
-    return new Embed()
-      .setTitle("Guild Leaderboard")
-      .setDescription(description)
-      .addFields({
-        name: "Mode",
-        value: `Metric: \`${metric}\` | Top: \`${top}\` | Gain Window: \`24h\` (${refText})`
-      })
-      .setFooter({ text: `Updated ${new Date(nowTs).toUTCString()}` });
+    const embed = new Embed().setColor(0xf1c40f).setTitle("🏆 Guild Leaderboard").setDescription(topThreeBlock);
+
+    if (restFields.length > 0) {
+      embed.addFields(...restFields);
+    }
+
+    embed.addFields({
+      name: "Meta",
+      value: `Metric: ${metricLabel} • Top ${top} • 24h window (${refText})\nUpdated: ${updated}`,
+      inline: false
+    });
+
+    return embed;
   }
 
   async buildLeaderboard({ metric, top, persistSnapshot = false }) {
