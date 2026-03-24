@@ -26,13 +26,10 @@
       "requirements": {
         "bedwarsStars": -1,
         "bedwarsFKDR": -1,
-
         "skywarsStars": -1,
         "skywarsKDR": -1,
-
         "duelsWins": -1,
         "duelsWLR": -1,
-
         "skyblockLevel": -1
       }
     },
@@ -54,7 +51,11 @@
         "HOPPITY_HUNT": true
       },
       "customTime": {
-        "2": ["BANK_INTEREST", "DARK_AUCTION", "JACOBS_CONTEST"]
+        "2": [
+          "BANK_INTEREST",
+          "DARK_AUCTION",
+          "JACOBS_CONTEST"
+        ]
       }
     },
     "hypixelUpdates": {
@@ -77,20 +78,35 @@
       "debugMode": true,
       "debugChannel": "DEBUG_CHANNEL_ID",
       "debugChannelMessageMode": "text",
-      "allowedBots": ["BOT_USER_ID"]
+      "allowedBots": [
+        "BOT_USER_ID"
+      ]
     },
     "commands": {
       "checkPerms": true,
       "commandRole": "COMMAND_ROLE_ID",
-      "blacklistRoles": ["BLACKLIST_ROLE_ID"],
-      "users": ["486155512568741900"]
+      "blacklistRoles": [
+        "BLACKLIST_ROLE_ID"
+      ],
+      "users": [
+        "486155512568741900"
+      ]
     },
     "other": {
       "messageMode": "bot",
       "messageFormat": "{chatType} > {skin} {rank} {username} {guildRank}§f: {message}",
       "stripEmojisFromUsernames": true,
       "filterMessages": true,
-      "filterWords": ["dox", "doxx", "doxed", "doxxed", "doxing", "doxxing", "doxes", "doxxes"],
+      "filterWords": [
+        "dox",
+        "doxx",
+        "doxed",
+        "doxxed",
+        "doxing",
+        "doxxing",
+        "doxes",
+        "doxxes"
+      ],
       "joinMessage": true,
       "autoLimbo": false
     },
@@ -111,7 +127,9 @@
     "joinRequests": {
       "enabled": false,
       "forumChannelId": "FORUM_CHANNEL_ID",
-      "moderatorRoleIds": ["JOIN_REQUEST_MOD_ROLE_ID"],
+      "moderatorRoleIds": [
+        "JOIN_REQUEST_MOD_ROLE_ID"
+      ],
       "statusTagIds": {
         "pending": "",
         "accepted_discord": "",
@@ -181,8 +199,14 @@
         "guildRank": "Shadow"
       }
     ],
-    "allowedInvokerGuildRanks": ["Guild Master", "Slayer"],
-    "protectedGuildRanks": ["Guild Master", "Slayer"]
+    "allowedInvokerGuildRanks": [
+      "Guild Master",
+      "Slayer"
+    ],
+    "protectedGuildRanks": [
+      "Guild Master",
+      "Slayer"
+    ]
   },
   "other": {
     "autoUpdater": true,
@@ -193,8 +217,11 @@
   "statsChannels": {
     "enabled": false,
     "autoUpdaterInterval": 5,
-    "channels": [{ "id": "CHANNEL_ID", "name": "Guild Level: {guildLevel}" }]
+    "channels": [
+      {
+        "id": "CHANNEL_ID",
+        "name": "Guild Level: {guildLevel}"
+      }
+    ]
   }
 }
-
-
