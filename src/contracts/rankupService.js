@@ -218,15 +218,50 @@ async function rankupSingleByUuid({ uuid, guild, triggerRoleSync = false }) {
   return rankupSingle({ username, guild, triggerRoleSync });
 }
 
-async function rankupAll({ guild, triggerRoleSync = false }) {
+async function rankupAll({ guild, triggerRoleSync = false, onProgress } = {}) {
   const results = [];
+  const total = Array.isArray(guild?.members) ? guild.members.length : 0;
+  let done = 0;
+
   for (const member of guild.members) {
+    let username = member.uuid;
     try {
-      const username = await getUsername(member.uuid);
+      username = await getUsername(member.uuid);
       const result = await rankupSingle({ username, guild, triggerRoleSync });
       results.push(result);
+
+      done += 1;
+      if (typeof onProgress === "function") {
+        try {
+          await onProgress({
+            done,
+            total,
+            username,
+            result,
+            summary: summarizeResults(results)
+          });
+        } catch (progressError) {
+          console.warn("Rankup progress callback failed:", progressError?.message || progressError);
+        }
+      }
     } catch (error) {
-      results.push(formatFailure(member.uuid, error?.message || String(error)));
+      const result = formatFailure(username, error?.message || String(error));
+      results.push(result);
+
+      done += 1;
+      if (typeof onProgress === "function") {
+        try {
+          await onProgress({
+            done,
+            total,
+            username,
+            result,
+            summary: summarizeResults(results)
+          });
+        } catch (progressError) {
+          console.warn("Rankup progress callback failed:", progressError?.message || progressError);
+        }
+      }
     }
   }
 
