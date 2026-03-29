@@ -55,7 +55,7 @@ class CarryService {
   }
 
   async reconcileMissingCarryArtifacts() {
-    const stats = { checked: 0, threadBackfilled: 0, channelBackfilled: 0, errors: 0 };
+    const stats = { checked: 0, threadBackfilled: 0, channelBackfilled: 0, errors: 0, errorDetails: [] };
     if (!this.client) return stats;
     const openCarries = this.db
       .getConnection()
@@ -83,8 +83,11 @@ class CarryService {
           carry.tier,
           Number(carry.amount),
           Number(carry.final_price)
-        ).catch(() => {
+        ).catch((error) => {
           stats.errors += 1;
+          if (stats.errorDetails.length < 5) {
+            stats.errorDetails.push(`carry#${carry.id} ticket-thread: ${error?.message || String(error)}`);
+          }
         });
         const afterTicket = before?.ticket_id ? this.db.getConnection().prepare("SELECT forum_thread_id FROM tickets WHERE id = ?").get(before.ticket_id) : null;
         if (afterTicket?.forum_thread_id) {
@@ -94,7 +97,7 @@ class CarryService {
 
       if (!carry.execution_channel_id) {
         const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
-        const created = await this.createExecutionChannel({ carry, carrierIds: assigned }).catch(() => null);
+        const created = await this.createExecutionChannel({ carry, carrierIds: assigned }).catch((error) => ({ ok: false, reason: error?.message || String(error) }));
         if (created?.ok && created.channel?.id) {
           this.db
             .getConnection()
@@ -104,11 +107,21 @@ class CarryService {
           stats.channelBackfilled += 1;
         } else {
           stats.errors += 1;
+          if (stats.errorDetails.length < 5) {
+            stats.errorDetails.push(`carry#${carry.id} execution-channel: ${created?.reason || "unknown failure"}`);
+          }
+          this.db.logEvent("carry.execution_channel_backfill_failed", "carry", carry.id, {
+            reason: created?.reason || "unknown failure",
+            carryCategoryId: this.getCarryCategoryId()
+          });
         }
       } else {
         const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
-        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned).catch(() => {
+        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned).catch((error) => {
           stats.errors += 1;
+          if (stats.errorDetails.length < 5) {
+            stats.errorDetails.push(`carry#${carry.id} execution-access: ${error?.message || String(error)}`);
+          }
         });
       }
     }
@@ -990,8 +1003,12 @@ class CarryService {
 
     const categoryId = this.getCarryCategoryId();
     const category = categoryId ? await guild.channels.fetch(categoryId).catch(() => null) : null;
-    if (!category || category.type !== ChannelType.GuildCategory) {
-      return { ok: false, reason: "Carry category is not configured. Use /setup carry-category." };
+    const parentId = category && category.type === ChannelType.GuildCategory ? category.id : null;
+    if (categoryId && !parentId) {
+      this.db.logEvent("carry.execution_channel_category_fallback", "carry", carry.id, {
+        categoryId,
+        reason: "Configured category could not be fetched as GuildCategory; creating in guild root."
+      });
     }
 
     const name = `carry-${carry.id}-${String(carry.carry_type).replace(/[^a-z0-9-]/gi, "-").slice(0, 30)}`;
@@ -1029,13 +1046,16 @@ class CarryService {
       .create({
         name,
         type: ChannelType.GuildText,
-        parent: category.id,
+        parent: parentId,
         permissionOverwrites: overwrites
       })
-      .catch(() => null);
+      .catch((error) => ({ __error: error }));
 
-    if (!channel) {
-      return { ok: false, reason: "Failed to create carry execution channel." };
+    if (!channel || channel.__error) {
+      return {
+        ok: false,
+        reason: `Failed to create carry execution channel${channel?.__error?.message ? `: ${channel.__error.message}` : "."}`
+      };
     }
 
     await channel.send({

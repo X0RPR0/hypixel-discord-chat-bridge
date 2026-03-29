@@ -207,11 +207,27 @@ class TicketService {
 
     const forumId = this.getTicketLogsForumId();
     if (!forumId) {
+      this.db.logEvent("ticket.thread_create_failed", "ticket", ticket.id, {
+        forumId: null,
+        error: "Ticket logs forum is not configured."
+      });
       return null;
     }
 
     const forum = await this.client.channels.fetch(forumId).catch(() => null);
-    if (!forum || forum.type !== ChannelType.GuildForum) {
+    if (!forum) {
+      this.db.logEvent("ticket.thread_create_failed", "ticket", ticket.id, {
+        forumId,
+        error: "Forum channel could not be fetched (missing access or invalid channel id)."
+      });
+      return null;
+    }
+
+    if (forum.type !== ChannelType.GuildForum) {
+      this.db.logEvent("ticket.thread_create_failed", "ticket", ticket.id, {
+        forumId,
+        error: `Configured channel is not a forum (type=${forum.type}).`
+      });
       return null;
     }
 

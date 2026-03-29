@@ -51,10 +51,11 @@ module.exports = {
     if (sub === "repair") {
       const result = await service.reconcileMissingCarryArtifacts();
       await service.publishCarrierDashboard().catch(() => {});
+      const details = Array.isArray(result.errorDetails) && result.errorDetails.length ? `\nDetails: ${result.errorDetails.join(" | ")}` : "";
       return interaction.editReply({
         embeds: [
           new SuccessEmbed(
-            `Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.`
+            `Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.${details}`
           )
         ]
       });
