@@ -15,6 +15,7 @@ const { formatNumber } = require("../../contracts/helperFunctions.js");
 const config = require("../../../config.json");
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
+const GUILD_MEMBER_HISTORY_PATH = "data/guildMemberHistory.json";
 const PANEL_BUTTON_ID = "joinreq:create";
 const PANEL_VERIFY_BUTTON_ID = "joinreq_verify_panel";
 const PANEL_MODAL_ID = "joinreq:create:submit";
@@ -320,6 +321,73 @@ class JoinRequestManager {
 
   getRequestById(requestId) {
     return this.state.requests.find((request) => request.requestId === requestId);
+  }
+
+  normalizeUuid(uuid) {
+    return String(uuid || "")
+      .replaceAll("-", "")
+      .toLowerCase();
+  }
+
+  loadGuildMemberHistory() {
+    try {
+      if (!existsSync(GUILD_MEMBER_HISTORY_PATH)) {
+        return null;
+      }
+
+      const parsed = JSON.parse(readFileSync(GUILD_MEMBER_HISTORY_PATH, "utf8"));
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+
+      if (parsed.version === 1 && parsed.members && typeof parsed.members === "object") {
+        return parsed.members;
+      }
+
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  getHistoryTimestamp(dateValue) {
+    const ms = typeof dateValue === "number" ? dateValue : Date.parse(dateValue);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      return null;
+    }
+
+    return Math.floor(ms / 1000);
+  }
+
+  async getGuildHistoryForRequest(request) {
+    const members = this.loadGuildMemberHistory();
+    if (!members) {
+      return null;
+    }
+
+    let uuid = request?.uuid || null;
+    if (!uuid && request?.username) {
+      uuid = await getUUID(request.username).catch(() => null);
+    }
+
+    if (!uuid) {
+      return null;
+    }
+
+    const history = members[this.normalizeUuid(uuid)];
+    if (!history?.departure) {
+      return null;
+    }
+
+    const oldUsername =
+      history.lastKnownUsername && history.lastKnownUsername.toLowerCase() !== String(request?.username || "").toLowerCase()
+        ? history.lastKnownUsername
+        : null;
+
+    return {
+      oldUsername,
+      departure: history.departure
+    };
   }
 
   async getGuildByPlayer(player) {
@@ -628,6 +696,30 @@ class JoinRequestManager {
       baseEmbed.addFields({
         name: "Denied",
         value: `by <@${lastDenied.actorDiscordId}> at <t:${this.toTimestamp(lastDenied.timestamp)}:f>`,
+        inline: false
+      });
+    }
+
+    const guildHistory = await this.getGuildHistoryForRequest(request);
+    if (guildHistory?.departure) {
+      const departure = guildHistory.departure;
+      const departureTs = this.getHistoryTimestamp(departure.date);
+      const departureLabel = departure.type === "kicked" ? "Kicked" : "Left";
+      const lines = [
+        "Previously in guild: Yes",
+        guildHistory.oldUsername ? `Old username: ${guildHistory.oldUsername}` : null,
+        `Last departure: ${departureLabel}`,
+        departureTs ? `Date: <t:${departureTs}:f>` : null,
+        departure.type === "kicked" ? `Kicked by: ${departure.kickedBy || "Unknown"}` : null,
+        departure.type === "kicked" ? `Reason: ${departure.reason || "Unknown"}` : null
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 1024);
+
+      baseEmbed.addFields({
+        name: "Guild History",
+        value: lines,
         inline: false
       });
     }
