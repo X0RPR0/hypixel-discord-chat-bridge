@@ -396,11 +396,23 @@ class GiveawayService {
   }
 
   sendGuildAnnouncement(message) {
-    if (!global.bot?._client?.chat) {
+    if (!global.bot?._client?.chat || typeof global.bot.chat !== "function") {
       return;
     }
 
-    bot.chat(`/gc ${message}`);
+    const normalized = String(message || "")
+      .replace(/<@!?\d+>/g, "discord-user")
+      .replace(/`/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return;
+
+    const payload = `/gc ${normalized}`.slice(0, 255);
+    try {
+      global.bot.chat(payload);
+    } catch (error) {
+      console.error("Failed to send giveaway guild announcement", error);
+    }
   }
 
   async createGiveaway({ prize, durationMs, winnerCount = 1, channelId, requiredRoleId = null, createdBy = {} }) {
@@ -750,7 +762,10 @@ class GiveawayService {
       return;
     }
 
-    this.sendGuildAnnouncement(`Giveaway #${id} ended. Winner(s): ${winners.map((winner) => winner.display).join(", ")}`);
+    const winnerText = winners
+      .map((winner) => (winner.type === "ingame" ? winner.value : `discord:${winner.value}`))
+      .join(", ");
+    this.sendGuildAnnouncement(`Giveaway #${id} ended. Winner(s): ${winnerText}`);
   }
 
   clearTimer(id) {

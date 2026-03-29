@@ -218,25 +218,34 @@ class TicketService {
     const name = `ticket-${ticket.id}-${String(context.type || ticket.type || "support").replace(/[^a-z0-9_-]/gi, "-").slice(0, 36)}`;
     const staffMention = this.getStaffRoleIds()[0] ? `<@&${this.getStaffRoleIds()[0]}>` : "";
 
-    const starter = await forum.threads.create({
-      name,
-      message: {
-        content: `${staffMention} Ticket #${ticket.id} opened by <@${ticket.customer_discord_id || "0"}>`,
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle(context.title || ticket.title || "Support Ticket")
-            .setDescription(context.initialContent || "No additional context provided.")
-            .addFields(
-              { name: "Ticket ID", value: String(ticket.id), inline: true },
-              { name: "Type", value: String(ticket.type), inline: true },
-              { name: "Customer", value: `<@${ticket.customer_discord_id || "0"}>`, inline: true }
-            )
-            .setTimestamp(new Date(ticket.created_at))
-        ],
-        components: this.buildTicketControlRows(ticket.id)
-      }
-    });
+    let starter = null;
+    try {
+      starter = await forum.threads.create({
+        name,
+        message: {
+          content: `${staffMention} Ticket #${ticket.id} opened by <@${ticket.customer_discord_id || "0"}>`,
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x2ecc71)
+              .setTitle(context.title || ticket.title || "Support Ticket")
+              .setDescription(context.initialContent || "No additional context provided.")
+              .addFields(
+                { name: "Ticket ID", value: String(ticket.id), inline: true },
+                { name: "Type", value: String(ticket.type), inline: true },
+                { name: "Customer", value: `<@${ticket.customer_discord_id || "0"}>`, inline: true }
+              )
+              .setTimestamp(new Date(ticket.created_at))
+          ],
+          components: this.buildTicketControlRows(ticket.id)
+        }
+      });
+    } catch (error) {
+      this.db.logEvent("ticket.thread_create_failed", "ticket", ticket.id, {
+        forumId,
+        error: error?.message || String(error)
+      });
+      return null;
+    }
 
     const starterMessage = await starter.fetchStarterMessage().catch(() => null);
 

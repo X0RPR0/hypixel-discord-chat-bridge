@@ -709,6 +709,22 @@ class CarryService {
     if (thread) {
       this.db.getConnection().prepare("UPDATE carries SET ticket_id = ? WHERE id = ?").run(ticketId, carryId);
       await this.syncCarryTicketIndicators(carryId).catch(() => {});
+      return;
+    }
+
+    this.db.logEvent("carry.ticket_thread_missing", "carry", carryId, { ticketId });
+    const dashboardId = this.getCarrierDashboardChannelId();
+    if (dashboardId && this.client) {
+      const channel = await this.client.channels.fetch(dashboardId).catch(() => null);
+      if (channel && typeof channel.send === "function") {
+        const staffRole = this.getStaffRoleIds()[0];
+        const mention = staffRole ? `<@&${staffRole}> ` : "";
+        await channel
+          .send({
+            content: `${mention}Carry #${carryId} created but no ticket forum thread was created. Check \`/setup ticket-logs\` and forum permissions.`
+          })
+          .catch(() => {});
+      }
     }
   }
 
