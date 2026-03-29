@@ -6,6 +6,7 @@ const {
   ChannelType,
   EmbedBuilder,
   ModalBuilder,
+  OverwriteType,
   PermissionsBitField,
   StringSelectMenuBuilder,
   TextInputBuilder,
@@ -1017,6 +1018,7 @@ class CarryService {
     const overwrites = [
       {
         id: guild.roles.everyone.id,
+        type: OverwriteType.Role,
         deny: [PermissionsBitField.Flags.ViewChannel]
       }
     ];
@@ -1024,6 +1026,7 @@ class CarryService {
     if (carry.customer_discord_id) {
       overwrites.push({
         id: carry.customer_discord_id,
+        type: OverwriteType.Member,
         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
       });
     }
@@ -1031,6 +1034,7 @@ class CarryService {
     for (const id of carrierIds) {
       overwrites.push({
         id,
+        type: OverwriteType.Member,
         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
       });
     }
@@ -1038,6 +1042,7 @@ class CarryService {
     for (const roleId of staffRoleIds) {
       overwrites.push({
         id: roleId,
+        type: OverwriteType.Role,
         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
       });
     }
