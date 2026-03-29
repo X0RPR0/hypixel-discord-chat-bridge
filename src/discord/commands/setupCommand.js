@@ -24,6 +24,14 @@ module.exports = {
     )
     .addSubcommand((s) =>
       s
+        .setName("carrier-stats")
+        .setDescription("Set carrier stats dashboard channel")
+        .addChannelOption((o) =>
+          o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        )
+    )
+    .addSubcommand((s) =>
+      s
         .setName("ticket-dashboard")
         .setDescription("Set ticket dashboard channel")
         .addChannelOption((o) =>
@@ -82,6 +90,13 @@ module.exports = {
       carryService.setCarrierDashboardChannelId(channel.id);
       await carryService.publishCarrierDashboard(channel.id);
       return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier dashboard set to <#${channel.id}>.`)] });
+    }
+
+    if (sub === "carrier-stats") {
+      const channel = interaction.options.getChannel("channel", true);
+      carryService.setCarrierStatsChannelId(channel.id);
+      await carryService.publishCarrierStatsDashboard(channel.id);
+      return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier stats dashboard set to <#${channel.id}>.`)] });
     }
 
     if (sub === "ticket-dashboard") {

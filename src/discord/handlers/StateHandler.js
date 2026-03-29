@@ -34,6 +34,7 @@ class StateHandler {
     await this.discord.ticketService.publishDashboard().catch(() => {});
     await this.discord.carryService.publishCarryDashboard().catch(() => {});
     await this.discord.carryService.publishCarrierDashboard().catch(() => {});
+    await this.discord.carryService.publishCarrierStatsDashboard().catch(() => {});
     startWeeklyFreeCarryReset(this.discord.carryService);
 
     channel.send({

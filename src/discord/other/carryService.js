@@ -156,6 +156,14 @@ class CarryService {
     return this.db.getBinding("carrier_dashboard_channel_id", config.discord?.carry?.carrierDashboardChannelId || null);
   }
 
+  setCarrierStatsChannelId(channelId) {
+    this.db.setBinding("carrier_stats_channel_id", channelId);
+  }
+
+  getCarrierStatsChannelId() {
+    return this.db.getBinding("carrier_stats_channel_id", config.discord?.carry?.carrierStatsChannelId || null);
+  }
+
   setCarryCategoryId(categoryId) {
     this.db.setBinding("carry_category_id", categoryId);
   }
@@ -416,15 +424,42 @@ class CarryService {
           .join("\n")
       : "Queue is empty.";
 
+    const components = [];
+    if (rows.length > 0) {
+      const options = rows.slice(0, 25).map((row) => {
+        const paidFlag = Number(row.is_paid) ? "PAID" : Number(row.is_free) ? "FREE" : "STD";
+        return {
+          label: `#${row.carry_id} ${row.carry_type} ${row.tier} x${row.amount}`.slice(0, 100),
+          description: `${paidFlag} | prio ${Math.round(Number(row.priority_score || 0))}`.slice(0, 100),
+          value: String(row.carry_id)
+        };
+      });
+      components.push(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${CARRY_PREFIX}carrier_pick`)
+            .setPlaceholder("Choose a carry to claim")
+            .addOptions(options)
+        )
+      );
+    }
+
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim`).setLabel("Claim by ID").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}carrier_refresh`).setLabel("Refresh").setStyle(ButtonStyle.Secondary)
+      )
+    );
+
     const payload = {
       embeds: [
-        new EmbedBuilder().setColor(0x2ecc71).setTitle("Carrier Dashboard").setDescription(queueText).setFooter({ text: "Use buttons for queue actions." })
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle("Carrier Dashboard")
+          .setDescription(queueText)
+          .setFooter({ text: "Use dropdown for quick claim, or Claim by ID." })
       ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim`).setLabel("Claim").setStyle(ButtonStyle.Success)
-        )
-      ]
+      components
     };
 
     const messageId = this.db.getBinding("carrier_dashboard_message_id", null);
@@ -438,6 +473,62 @@ class CarryService {
 
     message = await channel.send(payload);
     this.db.setBinding("carrier_dashboard_message_id", message.id);
+    return message;
+  }
+
+  async publishCarrierStatsDashboard(channelId = null) {
+    const targetId = channelId || this.getCarrierStatsChannelId();
+    if (!targetId || !this.client) return null;
+
+    const channel = await this.client.channels.fetch(targetId).catch(() => null);
+    if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return null;
+
+    this.setCarrierStatsChannelId(channel.id);
+
+    const rows = this.db
+      .getConnection()
+      .prepare(
+        `SELECT cs.user_id,
+                cs.completed_count,
+                cs.total_duration_ms,
+                cs.acceptance_rate,
+                COALESCE((SELECT ROUND(AVG(r.rating), 2) FROM customer_ratings r
+                         JOIN carries c ON c.id = r.carry_id
+                         WHERE c.assigned_carrier_discord_ids LIKE '%' || cs.user_id || '%'), 0) AS avg_rating
+         FROM carrier_stats cs
+         ORDER BY cs.completed_count DESC, cs.updated_at DESC
+         LIMIT 15`
+      )
+      .all();
+
+    const description =
+      rows.length === 0
+        ? "No carrier stats yet."
+        : rows
+            .map((row, i) => {
+              const avgMinutes = row.completed_count > 0 ? Math.round(Number(row.total_duration_ms || 0) / Number(row.completed_count) / 60000) : 0;
+              const acceptance = Math.round(Number(row.acceptance_rate || 0) * 100);
+              const rating = Number(row.avg_rating || 0);
+              return `${i + 1}. <@${row.user_id}> | done: **${row.completed_count}** | avg: **${avgMinutes}m** | accept: **${acceptance}%** | rating: **${rating || "-"}**`;
+            })
+            .join("\n");
+
+    const payload = {
+      embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle("Carrier Stats").setDescription(description)],
+      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${CARRY_PREFIX}stats_refresh`).setLabel("Refresh").setStyle(ButtonStyle.Secondary))]
+    };
+
+    const messageId = this.db.getBinding("carrier_stats_message_id", null);
+    let message = null;
+    if (messageId) message = await channel.messages.fetch(messageId).catch(() => null);
+
+    if (message) {
+      await message.edit(payload).catch(() => {});
+      return message;
+    }
+
+    message = await channel.send(payload);
+    this.db.setBinding("carrier_stats_message_id", message.id);
     return message;
   }
 
@@ -858,10 +949,37 @@ class CarryService {
       });
     }
 
+    if (carry.execution_channel_id && carry.customer_discord_id && assigned.length > 0 && this.client) {
+      const executionChannel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+      if (executionChannel && executionChannel.type === ChannelType.GuildText) {
+        await executionChannel
+          .send({
+            content: `<@${carry.customer_discord_id}> Please rate your carry experience.`,
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xf39c12)
+                .setTitle(`Rate Carry #${carry.id}`)
+                .setDescription("Give a 1-5 rating for the carrier service.")
+            ],
+            components: [
+              new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:1`).setLabel("1").setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:2`).setLabel("2").setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:3`).setLabel("3").setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:4`).setLabel("4").setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:5`).setLabel("5").setStyle(ButtonStyle.Success)
+              )
+            ]
+          })
+          .catch(() => {});
+      }
+    }
+
     await this.closeExecutionChannel(carry.execution_channel_id);
     this.db.logEvent("carry.completed", "carry", carry.id, { duration });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
+    await this.publishCarrierStatsDashboard().catch(() => {});
   }
 
   upsertCarrierStatsOnCompletion(carrierId, duration, accepted) {
@@ -1065,6 +1183,75 @@ class CarryService {
         ephemeral: true,
         content: `Week: \`${weekKey}\`\nFree carries: **${remaining}/${limit}** remaining (${used} used).`
       });
+      return true;
+    }
+
+    if (parsed.action === "carrier_refresh") {
+      await this.publishCarrierDashboard();
+      await interaction.reply({ content: "Carrier dashboard refreshed.", ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "stats_refresh") {
+      await this.publishCarrierStatsDashboard();
+      await interaction.reply({ content: "Carrier stats refreshed.", ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "carrier_pick") {
+      if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only carriers/staff can claim carries.", ephemeral: true });
+        return true;
+      }
+
+      const selected = interaction.values?.[0];
+      const carryId = Number(selected);
+      if (!Number.isInteger(carryId) || carryId <= 0) {
+        await interaction.reply({ content: "Invalid carry id selected.", ephemeral: true });
+        return true;
+      }
+
+      const result = await this.claimCarry(carryId, interaction.user.id);
+      await interaction.reply({ content: result.ok ? `Claimed carry #${carryId}.` : result.reason, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "rate") {
+      const [carryIdRaw, ratingRaw] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      const rating = Number(ratingRaw);
+      if (!Number.isInteger(carryId) || carryId <= 0 || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+        await interaction.reply({ content: "Invalid rating payload.", ephemeral: true });
+        return true;
+      }
+
+      const carry = this.getCarryById(carryId);
+      if (!carry) {
+        await interaction.reply({ content: "Carry not found.", ephemeral: true });
+        return true;
+      }
+
+      if (String(carry.customer_discord_id) !== String(interaction.user.id)) {
+        await interaction.reply({ content: "Only the customer can rate this carry.", ephemeral: true });
+        return true;
+      }
+
+      const existing = this.db
+        .getConnection()
+        .prepare("SELECT id FROM customer_ratings WHERE carry_id = ? AND customer_discord_id = ?")
+        .get(carryId, interaction.user.id);
+      if (existing) {
+        await interaction.reply({ content: "You already rated this carry.", ephemeral: true });
+        return true;
+      }
+
+      this.db
+        .getConnection()
+        .prepare("INSERT INTO customer_ratings (carry_id, customer_discord_id, rating, comment, created_at) VALUES (?, ?, ?, NULL, ?)")
+        .run(carryId, interaction.user.id, rating, Date.now());
+      this.db.logEvent("carry.rated", "carry", carryId, { customerId: interaction.user.id, rating });
+      await this.publishCarrierStatsDashboard().catch(() => {});
+      await interaction.reply({ content: `Thanks. You rated carry #${carryId} with ${rating}/5.`, ephemeral: true });
       return true;
     }
 
