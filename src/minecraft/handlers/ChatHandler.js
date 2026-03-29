@@ -82,6 +82,11 @@ class StateHandler extends eventHandler {
         return;
       }
 
+      const rejoinContext = await this.getRejoinContext(username);
+      if (rejoinContext?.departure) {
+        await this.sendOfficerRejoinMessage(username, rejoinContext);
+      }
+
       const uuid = await getUUID(username).catch(() => null);
       if (uuid && config.minecraft.guildRequirements.enabled) {
         const playerInfo = await checkRequirements(uuid).catch(() => null);
@@ -177,8 +182,6 @@ class StateHandler extends eventHandler {
           departure.type === "kicked" ? `\nKick reason: \`${departure.reason || "Unknown"}\`` : ""
         ].join("");
         joinedMessage = `${joinedMessage}\n\nPreviously in guild: yes${oldUsernameLine}${detailLines}`;
-
-        await this.sendOfficerRejoinMessage(username, rejoinContext);
       }
 
       const broadcastMessage = {
