@@ -762,6 +762,28 @@ class CarryService {
     await this.ticketService.syncCarryThreadIndicators(carry.ticket_id, carry).catch(() => {});
   }
 
+  async ensureExecutionChannelAccess(channelId, carry, carrierIds = []) {
+    if (!channelId || !this.client) return;
+    const channel = await this.client.channels.fetch(channelId).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+
+    const overwrite = {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true
+    };
+
+    const targets = new Set();
+    if (carry?.customer_discord_id) targets.add(String(carry.customer_discord_id));
+    for (const id of carrierIds) {
+      if (id) targets.add(String(id));
+    }
+
+    for (const id of targets) {
+      await channel.permissionOverwrites.edit(id, overwrite).catch(() => {});
+    }
+  }
+
   async claimCarry(carryId, carrierId) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
@@ -778,6 +800,10 @@ class CarryService {
       .getConnection()
       .prepare("UPDATE queue_entries SET state = 'claimed', claimed_at = ?, claimed_by_discord_id = ?, stale_notified = 0 WHERE carry_id = ?")
       .run(Date.now(), carrierId, carry.id);
+
+    if (carry.execution_channel_id) {
+      await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned);
+    }
 
     this.db.logEvent("carry.claimed", "carry", carry.id, { carrierId });
     await this.syncCarryTicketIndicators(carry.id);
@@ -799,6 +825,8 @@ class CarryService {
       const created = await this.createExecutionChannel({ carry, carrierIds: assigned });
       if (!created.ok) return created;
       channelId = created.channel.id;
+    } else {
+      await this.ensureExecutionChannelAccess(channelId, carry, assigned);
     }
 
     this.db
