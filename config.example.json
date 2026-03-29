@@ -143,6 +143,21 @@
       "allowDiscordSelfRequest": true,
       "requestEntryChannelId": "JOIN_REQUEST_ENTRY_CHANNEL_ID",
       "requestEntryMessageId": ""
+    },
+    "tickets": {
+      "staffRoleIds": [
+        "SUPPORT_STAFF_ROLE_ID"
+      ],
+      "dashboardChannelId": "TICKET_DASHBOARD_CHANNEL_ID",
+      "ticketLogsForumChannelId": "TICKET_LOGS_FORUM_CHANNEL_ID"
+    },
+    "carry": {
+      "carrierRoleIds": [
+        "CARRIER_ROLE_ID"
+      ],
+      "dashboardChannelId": "CARRY_DASHBOARD_CHANNEL_ID",
+      "carrierDashboardChannelId": "CARRIER_DASHBOARD_CHANNEL_ID",
+      "categoryId": "CARRY_CATEGORY_ID"
     }
   },
   "web": {

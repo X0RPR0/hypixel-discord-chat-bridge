@@ -644,6 +644,11 @@ class StateHandler extends eventHandler {
       })  
     }*/
 
+    const privateMessage = this.getIncomingPrivateMessage(message);
+    if (privateMessage && this.isCommand(privateMessage.message) && this.isGiveawayCommand(privateMessage.message)) {
+      return this.command.handle(privateMessage.username, privateMessage.message, false, "pm");
+    }
+
     const regex =
       config.discord.other.messageMode === "minecraft"
         ? /^(?<chatType>§[0-9a-fA-F](Guild|Officer)) > (?<rank>§[0-9a-fA-F](?:\[.*?\])?)?\s*(?<username>[^§\s]+)\s*(?:(?<guildRank>§[0-9a-fA-F](?:\[.*?\])?))?\s*§f: (?<message>.*)/
@@ -680,11 +685,33 @@ class StateHandler extends eventHandler {
       if (this.isDiscordMessage(match.groups.message) === true) {
         const { player, command } = this.getCommandData(match.groups.message);
 
-        return this.command.handle(player, command, officer);
+        return this.command.handle(player, command, officer, officer ? "officer" : "guild");
       }
 
-      return this.command.handle(match.groups.username, match.groups.message, officer);
+      return this.command.handle(match.groups.username, match.groups.message, officer, officer ? "officer" : "guild");
     }
+  }
+
+  getIncomingPrivateMessage(message) {
+    const match = String(message || "").match(/^From\s+(?:\[(?<rank>[^\]]+)\]\s+)?(?<username>[A-Za-z0-9_]{3,16}):\s*(?<message>.+)$/i);
+    if (!match?.groups?.username || !match?.groups?.message) {
+      return null;
+    }
+
+    return {
+      username: match.groups.username,
+      message: match.groups.message
+    };
+  }
+
+  isGiveawayCommand(message) {
+    const clean = String(message || "").trim();
+    if (!clean.startsWith(config.minecraft.bot.prefix)) {
+      return false;
+    }
+
+    const command = clean.slice(config.minecraft.bot.prefix.length).trim().split(/\s+/)[0]?.toLowerCase();
+    return ["giveaway", "gaw", "giveaways", "activegiveaways", "ags", "joingiveaway", "jg", "leavegiveaway", "lg"].includes(command);
   }
 
   isDiscordMessage(message) {

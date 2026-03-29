@@ -19,7 +19,7 @@ class CommandHandler {
     }
   }
 
-  handle(player, message, officer) {
+  handle(player, message, officer, source = officer ? "officer" : "guild") {
     if (message.startsWith(this.prefix)) {
       if (config.minecraft.commands.normal === false) {
         return;
@@ -35,7 +35,9 @@ class CommandHandler {
 
       console.minecraft(`${player} - [${command.name}] ${message}`);
       command.officer = officer;
-      command.onCommand(player, message);
+      command.source = source;
+      command.replyTarget = source === "pm" ? player : null;
+      command.onCommand(player, message, { source, officer, replyTarget: command.replyTarget });
     } else if (message.startsWith("-") && message.startsWith("- ") === false) {
       if (config.minecraft.commands.soopy === false || message.at(1) === "-") {
         return;

@@ -49,6 +49,7 @@
     "pretty-ms": "^9.3.0",
     "prismarine-nbt": "^2.8.0",
     "rss-parser": "^3.13.0",
+    "sql.js": "^1.13.0",
     "skyhelper-networth": "^2.7.0",
     "util": "^0.12.5",
     "winston": "^3.19.0",

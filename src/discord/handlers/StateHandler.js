@@ -1,4 +1,6 @@
 const config = require("../../../config.json");
+const giveawayService = require("../other/giveawayService.js");
+const { startWeeklyFreeCarryReset, stopWeeklyFreeCarryReset } = require("../other/freecarryWeeklyReset.js");
 
 class StateHandler {
   constructor(discord) {
@@ -25,6 +27,14 @@ class StateHandler {
     if (config.statsChannels.enabled) require("../other/statsChannels.js");
     require("../other/leaderboardUpdater.js");
     await this.discord.joinRequestManager.initialize();
+    await this.discord.carryService.db.initialize();
+    this.discord.ticketService.initialize(this.discord.client);
+    this.discord.carryService.initialize(this.discord.client);
+    giveawayService.initialize(this.discord.client);
+    await this.discord.ticketService.publishDashboard().catch(() => {});
+    await this.discord.carryService.publishCarryDashboard().catch(() => {});
+    await this.discord.carryService.publishCarrierDashboard().catch(() => {});
+    startWeeklyFreeCarryReset(this.discord.carryService);
 
     channel.send({
       embeds: [
@@ -38,6 +48,13 @@ class StateHandler {
 
   async onClose() {
     this.discord.joinRequestManager.stop();
+    this.discord.carryService.shutdown();
+    this.discord.ticketService.shutdown();
+    stopWeeklyFreeCarryReset();
+    if (this.discord.carryService?.db?.close) {
+      this.discord.carryService.db.close();
+    }
+    giveawayService.shutdown();
 
     const channel = await this.getChannel("Guild");
     if (channel === undefined) {

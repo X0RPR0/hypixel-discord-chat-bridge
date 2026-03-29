@@ -284,4 +284,35 @@ describe("roastEngine stage matrix v4", () => {
 
     expect(result.findings.some((finding) => finding.id === "stage_core_floor")).toBe(false);
   });
+
+  test("escaped newline templates are unescaped before rendering", () => {
+    const result = evaluateRoast({
+      stats: makeStats({
+        sbLevel: 430,
+        skillAverage: 30,
+        networth: 12000000000,
+        networthFormatted: "12B",
+        skills: {
+          combat: { levelWithProgress: 58 },
+          mining: { levelWithProgress: 30 },
+          farming: { levelWithProgress: 58 },
+          fishing: { levelWithProgress: 47 },
+          foraging: { levelWithProgress: 47 },
+          enchanting: { levelWithProgress: 58 },
+          alchemy: { levelWithProgress: 47 },
+          taming: { levelWithProgress: 58 },
+          carpentry: { levelWithProgress: 47 }
+        }
+      }),
+      username: "Escapes",
+      isSelf: false,
+      configRoast: {
+        nukeChance: 1,
+        nukeLines: ["{lineA}\\n{lineB}\\nexplain"]
+      },
+      rng: () => 0
+    });
+
+    expect(result.message.includes("\\n")).toBe(false);
+  });
 });

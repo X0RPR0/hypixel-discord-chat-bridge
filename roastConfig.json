@@ -61,9 +61,9 @@
     }
   },
   "selfIntroLines": [
-    "you asked for this",
-    "bro snitched on himself",
-    "self report detected"
+    "you asked for this.",
+    "bro snitched on himself.",
+    "self report detected."
   ],
   "noIssueReplies": [
     "i tried finding a skill issue but this is annoyingly balanced.",
@@ -139,6 +139,17 @@
       ],
       "extreme": [
         "{username} is combat 1-trick propaganda."
+      ]
+    },
+    "stage_core_floor+stage_sa_floor": {
+      "mild": [
+        "{username} is behind on both core skills and skill average for this stage."
+      ],
+      "high": [
+        "SB {sbLevel} and both core + SA are behind. this profile needs a fundamentals arc."
+      ],
+      "extreme": [
+        "{username} failed both core and SA stage checks. hard rebuild angle."
       ]
     }
   },

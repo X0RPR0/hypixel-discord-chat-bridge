@@ -6,6 +6,9 @@ const MessageHandler = require("./handlers/MessageHandler.js");
 const StateHandler = require("./handlers/StateHandler.js");
 const CommandHandler = require("./CommandHandler.js");
 const { JoinRequestManager } = require("./other/joinRequestManager.js");
+const { carryDatabase } = require("./other/carryDatabase.js");
+const { TicketService } = require("./other/ticketService.js");
+const { CarryService } = require("./other/carryService.js");
 const config = require("../../config.json");
 const fs = require("fs");
 const { ErrorEmbed } = require("../contracts/embedHandler.js");
@@ -20,6 +23,8 @@ class DiscordManager extends CommunicationBridge {
     this.messageHandler = new MessageHandler(this);
     this.commandHandler = new CommandHandler(this);
     this.joinRequestManager = new JoinRequestManager(this);
+    this.ticketService = new TicketService(carryDatabase);
+    this.carryService = new CarryService(carryDatabase, this.ticketService);
   }
 
   connect() {
@@ -29,10 +34,13 @@ class DiscordManager extends CommunicationBridge {
 
     this.client = client;
     this.client.joinRequestManager = this.joinRequestManager;
+    this.client.ticketService = this.ticketService;
+    this.client.carryService = this.carryService;
     this.commandHandler.loadCommands();
 
     this.client.on(Events.ClientReady, () => this.stateHandler.onReady());
     this.client.on(Events.MessageCreate, (message) => this.messageHandler.onMessage(message));
+    this.client.on(Events.MessageCreate, (message) => this.ticketService.onMessage(message));
 
     this.client.login(config.discord.bot.token).catch((error) => {
       console.error(error);

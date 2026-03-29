@@ -20,6 +20,25 @@ class Application {
       writeFileSync("./roastConfig.json", JSON.stringify({}, null, 2));
     }
     if (!existsSync("./data/joinRequests.json")) writeFileSync("./data/joinRequests.json", JSON.stringify({ version: 1, panelMessageId: null, requests: [] }));
+    if (!existsSync("./data/giveaways.json")) {
+      writeFileSync(
+        "./data/giveaways.json",
+        JSON.stringify(
+          {
+            version: 1,
+            settings: {
+              starterMode: "everyone",
+              allowedIngameStarterRanks: [],
+              defaultChannelId: null
+            },
+            activeGiveaways: [],
+            usedIds: []
+          },
+          null,
+          2
+        )
+      );
+    }
   }
 
   async register() {

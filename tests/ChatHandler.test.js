@@ -167,6 +167,33 @@ describe("ChatHandler", () => {
     });
   });
 
+  describe("getIncomingPrivateMessage", () => {
+    it("parses incoming PM command format", () => {
+      const parsed = chatHandler.getIncomingPrivateMessage("From [MVP+] Kimberlyx3: !giveaway \"Coins\" \"1d\"");
+      expect(parsed).toEqual({
+        username: "Kimberlyx3",
+        message: '!giveaway "Coins" "1d"'
+      });
+    });
+
+    it("returns null for non-PM lines", () => {
+      const parsed = chatHandler.getIncomingPrivateMessage("Guild > Kimberlyx3: hello");
+      expect(parsed).toBeNull();
+    });
+  });
+
+  describe("isGiveawayCommand", () => {
+    it("accepts giveaway aliases", () => {
+      expect(chatHandler.isGiveawayCommand("!giveaway \"x\"")).toBe(true);
+      expect(chatHandler.isGiveawayCommand("!jg \"1\"")).toBe(true);
+      expect(chatHandler.isGiveawayCommand("!ags")).toBe(true);
+    });
+
+    it("rejects other commands", () => {
+      expect(chatHandler.isGiveawayCommand("!help")).toBe(false);
+    });
+  });
+
   describe("getUsernameFromEventMessage", () => {
     it("should return the username from the message with a MVP+ rank", () => {
       const message = "[MVP+] DuckySoSkilled left the guild!";

@@ -2,6 +2,7 @@ const { isLinkedMember, isGuildMember, isVerifiedMember } = require("../../contr
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
 const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_VERIFY_BUTTON_ID, PANEL_MODAL_ID, PANEL_VERIFY_MODAL_ID } = require("../other/joinRequestManager.js");
+const giveawayService = require("../other/giveawayService.js");
 // eslint-disable-next-line no-unused-vars
 const { CommandInteraction, Events } = require("discord.js");
 const config = require("../../../config.json");
@@ -65,6 +66,55 @@ module.exports = {
 
         await command.execute(interaction);
       } else if (interaction.isButton()) {
+        if (interaction.client.ticketService) {
+          const handledByTicket = await interaction.client.ticketService.handleComponent(interaction).catch(() => false);
+          if (handledByTicket) {
+            return;
+          }
+        }
+
+        if (interaction.client.carryService) {
+          const handledByCarry = await interaction.client.carryService.handleComponent(interaction).catch(() => false);
+          if (handledByCarry) {
+            return;
+          }
+        }
+
+        if (interaction.customId.startsWith("giveaway:")) {
+          await interaction.deferReply({ ephemeral: true }).catch(() => {});
+          const [, action, id] = interaction.customId.split(":");
+          const giveawayId = Number(id);
+          if (!Number.isInteger(giveawayId) || giveawayId <= 0) {
+            return interaction.editReply({ embeds: [new ErrorEmbed("Invalid giveaway id.")] });
+          }
+
+          if (action === "join") {
+            const result = await giveawayService.joinFromDiscord({
+              giveawayId,
+              member: interaction.member
+            });
+            if (!result.ok) {
+              return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+            }
+
+            return interaction.editReply({ embeds: [new SuccessEmbed(`Joined giveaway #${giveawayId}.`)] });
+          }
+
+          if (action === "leave") {
+            const result = await giveawayService.leaveFromDiscord({
+              giveawayId,
+              userId: interaction.user.id
+            });
+            if (!result.ok) {
+              return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+            }
+
+            return interaction.editReply({ embeds: [new SuccessEmbed(`Left giveaway #${giveawayId}.`)] });
+          }
+
+          return interaction.editReply({ embeds: [new ErrorEmbed("Invalid giveaway action.")] });
+        }
+
         if (interaction.customId === PANEL_BUTTON_ID) {
           return interaction.client.joinRequestManager.handleCreateButton(interaction);
         }
@@ -95,6 +145,19 @@ module.exports = {
           await interaction.followUp({ embeds: [embed], ephemeral: true });
         }
       } else if (interaction.isModalSubmit()) {
+        if (interaction.client.ticketService) {
+          const handledByTicketModal = await interaction.client.ticketService.handleModal(interaction).catch(() => false);
+          if (handledByTicketModal) {
+            return;
+          }
+        }
+        if (interaction.client.carryService) {
+          const handledByCarryModal = await interaction.client.carryService.handleModal(interaction).catch(() => false);
+          if (handledByCarryModal) {
+            return;
+          }
+        }
+
         if (interaction.customId === PANEL_MODAL_ID) {
           return interaction.client.joinRequestManager.handleCreateModal(interaction);
         }

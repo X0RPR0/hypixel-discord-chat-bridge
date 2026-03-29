@@ -6,6 +6,8 @@ class minecraftCommand {
   constructor(minecraft) {
     this.minecraft = minecraft;
     this.officer = false;
+    this.source = "guild";
+    this.replyTarget = null;
   }
 
   /**
@@ -69,7 +71,11 @@ class minecraftCommand {
 
             bot.once("message", listener);
 
-            bot.chat(`/${this.officer ? "oc" : "gc"} ${message}`);
+            if (this.source === "pm" && this.replyTarget) {
+              bot.chat(`/msg ${this.replyTarget} ${message}`);
+            } else {
+              bot.chat(`/${this.officer ? "oc" : "gc"} ${message}`);
+            }
 
             setTimeout(() => {
               bot.removeListener("message", listener);

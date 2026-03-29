@@ -783,7 +783,10 @@ function prioritizeFindings(findings, { isSelf, comboKey, config }) {
 }
 
 function interpolate(template, context) {
-  return replaceVariables(template, context);
+  const normalizedTemplate = String(template || "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+  return replaceVariables(normalizedTemplate, context);
 }
 
 function buildSpecificMainHit({ username, findings, comboKey, config, rng }) {
