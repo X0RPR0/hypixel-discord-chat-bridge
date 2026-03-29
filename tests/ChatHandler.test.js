@@ -212,7 +212,7 @@ describe("ChatHandler", () => {
   describe("formatHistoryDate", () => {
     it("returns UTC timestamp string", () => {
       const formatted = chatHandler.formatHistoryDate(0);
-      expect(formatted).toBe("1970-01-01 00:00:00 UTC");
+      expect(formatted).toBe("1970-01-01 00:00 UTC");
     });
   });
 });

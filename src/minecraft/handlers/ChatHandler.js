@@ -176,8 +176,9 @@ class StateHandler extends eventHandler {
         const departure = rejoinContext.departure;
         const departureLabel = departure.type === "kicked" ? "kicked" : "left";
         const oldUsernameLine = rejoinContext.oldUsername ? `\nOld username: \`${rejoinContext.oldUsername}\`` : "";
+        const departureTimestamp = this.formatHistoryDiscordTimestamp(departure.date);
         const detailLines = [
-          `\nPrevious departure: ${departureLabel} on \`${this.formatHistoryDate(departure.date)}\``,
+          `\nPrevious departure: ${departureLabel} on ${departureTimestamp || `\`${this.formatHistoryDate(departure.date)}\``}`,
           departure.type === "kicked" ? `\nKicked by: \`${departure.kickedBy || "Unknown"}\`` : "",
           departure.type === "kicked" ? `\nKick reason: \`${departure.reason || "Unknown"}\`` : ""
         ].join("");
@@ -1040,7 +1041,17 @@ class StateHandler extends eventHandler {
       return "Unknown";
     }
 
-    return new Date(ts).toISOString().replace("T", " ").replace(".000Z", " UTC");
+    const iso = new Date(ts).toISOString();
+    return `${iso.slice(0, 16).replace("T", " ")} UTC`;
+  }
+
+  formatHistoryDiscordTimestamp(date) {
+    const ts = typeof date === "number" ? date : Date.parse(date);
+    if (Number.isNaN(ts)) {
+      return null;
+    }
+
+    return `<t:${Math.floor(ts / 1000)}:f>`;
   }
 
   extractKickDetails(message) {
