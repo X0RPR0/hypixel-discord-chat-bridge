@@ -15,6 +15,16 @@ const config = require("../../../config.json");
 const TICKET_CREATE_PREFIX = "ticket:create:";
 const TICKET_ACTION_PREFIX = "ticket:action:";
 const TICKET_MODAL_PREFIX = "ticket:modal:";
+const CARRY_TAG_DEFINITIONS = [
+  { key: "active", name: "Active", emoji: "🟢" },
+  { key: "queued", name: "Queued", emoji: "📥" },
+  { key: "in_progress", name: "In Progress", emoji: "🛠️" },
+  { key: "pending_confirm", name: "Pending Confirm", emoji: "⏳" },
+  { key: "completed", name: "Completed", emoji: "✅" },
+  { key: "cancelled", name: "Cancelled", emoji: "❌" },
+  { key: "paid", name: "Paid", emoji: "💸" },
+  { key: "unpaid", name: "Unpaid", emoji: "💰" }
+];
 
 class TicketService {
   constructor(db) {
@@ -235,7 +245,133 @@ class TicketService {
       .prepare("UPDATE tickets SET forum_thread_id = ?, dashboard_message_id = ? WHERE id = ?")
       .run(starter.id, starterMessage?.id || null, ticket.id);
 
+    await this.syncCarryThreadIndicators(ticket.id).catch(() => {});
     return starter;
+  }
+
+  getLatestCarryForTicket(ticketId) {
+    if (!ticketId) return null;
+    return this.db
+      .getConnection()
+      .prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
+      .get(Number(ticketId));
+  }
+
+  buildCarryIndicatorState(carry) {
+    if (!carry) return { tagKeys: [], reactionEmojis: [] };
+
+    const status = String(carry.status || "").toLowerCase();
+    const tagKeys = [];
+    const reactionEmojis = [];
+    const statusToKey = {
+      queued: "queued",
+      claimed: "in_progress",
+      in_progress: "in_progress",
+      pending_confirm: "pending_confirm",
+      completed: "completed",
+      cancelled: "cancelled"
+    };
+    const stageKey = statusToKey[status] || "active";
+    const isActive = ["queued", "claimed", "in_progress", "pending_confirm"].includes(status);
+    const paymentKey = Number(carry.is_paid) === 1 ? "paid" : "unpaid";
+
+    if (isActive) tagKeys.push("active");
+    tagKeys.push(stageKey, paymentKey);
+
+    const keyToEmoji = Object.fromEntries(CARRY_TAG_DEFINITIONS.map((item) => [item.key, item.emoji]));
+    for (const key of tagKeys) {
+      const emoji = keyToEmoji[key];
+      if (emoji && !reactionEmojis.includes(emoji)) reactionEmojis.push(emoji);
+    }
+
+    return { tagKeys, reactionEmojis };
+  }
+
+  async ensureCarryForumTags(forumChannel) {
+    if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) return {};
+
+    const existing = Array.isArray(forumChannel.availableTags) ? forumChannel.availableTags : [];
+    const byName = new Map(existing.map((tag) => [String(tag.name || "").toLowerCase(), tag]));
+    const missing = CARRY_TAG_DEFINITIONS.filter((def) => !byName.has(def.name.toLowerCase()));
+
+    if (missing.length > 0) {
+      const nextTags = [
+        ...existing.map((tag) => ({
+          id: tag.id,
+          name: tag.name,
+          moderated: Boolean(tag.moderated),
+          ...(tag.emojiId ? { emoji: { id: tag.emojiId } } : tag.emojiName ? { emoji: { name: tag.emojiName } } : {})
+        })),
+        ...missing.map((def) => ({
+          name: def.name,
+          moderated: false,
+          emoji: { name: def.emoji }
+        }))
+      ];
+
+      await forumChannel.setAvailableTags(nextTags).catch(() => {});
+      await forumChannel.fetch(true).catch(() => {});
+    }
+
+    const refreshed = Array.isArray(forumChannel.availableTags) ? forumChannel.availableTags : [];
+    const result = {};
+    for (const def of CARRY_TAG_DEFINITIONS) {
+      const found = refreshed.find((tag) => String(tag.name || "").toLowerCase() === def.name.toLowerCase());
+      if (found?.id) result[def.key] = found.id;
+    }
+    return result;
+  }
+
+  async syncCarryThreadReactions(thread, ticket, reactionEmojis) {
+    if (!thread || !ticket || !this.client) return;
+    const managedEmojis = new Set(CARRY_TAG_DEFINITIONS.map((item) => item.emoji));
+    const target = new Set(reactionEmojis || []);
+    let starterMessage = null;
+
+    if (ticket.dashboard_message_id) {
+      starterMessage = await thread.messages.fetch(ticket.dashboard_message_id).catch(() => null);
+    }
+
+    if (!starterMessage) {
+      starterMessage = await thread.fetchStarterMessage().catch(() => null);
+    }
+
+    if (!starterMessage) return;
+
+    await starterMessage.fetch().catch(() => {});
+    const reactions = [...starterMessage.reactions.cache.values()];
+    for (const reaction of reactions) {
+      const emoji = reaction.emoji?.name;
+      if (!emoji || !managedEmojis.has(emoji) || target.has(emoji)) continue;
+      await reaction.users.remove(this.client.user.id).catch(() => {});
+    }
+
+    for (const emoji of target) {
+      await starterMessage.react(emoji).catch(() => {});
+    }
+  }
+
+  async syncCarryThreadIndicators(ticketId, carryInput = null) {
+    const ticket = this.getTicketById(ticketId);
+    if (!ticket || !ticket.forum_thread_id || !this.client) return;
+
+    const carry = carryInput || this.getLatestCarryForTicket(ticket.id);
+    if (!carry) return;
+
+    const thread = await this.client.channels.fetch(ticket.forum_thread_id).catch(() => null);
+    if (!thread) return;
+    const forum = await this.client.channels.fetch(thread.parentId).catch(() => null);
+    if (!forum || forum.type !== ChannelType.GuildForum) return;
+
+    const { tagKeys, reactionEmojis } = this.buildCarryIndicatorState(carry);
+    const managedTagIds = await this.ensureCarryForumTags(forum);
+    const managedValues = new Set(Object.values(managedTagIds));
+    const keepTags = Array.isArray(thread.appliedTags) ? thread.appliedTags.filter((tagId) => !managedValues.has(tagId)) : [];
+    const applyManaged = tagKeys.map((key) => managedTagIds[key]).filter(Boolean);
+    const nextApplied = [...new Set([...keepTags, ...applyManaged])];
+
+    await thread.setAppliedTags(nextApplied).catch(() => {});
+    await this.syncCarryThreadReactions(thread, ticket, reactionEmojis).catch(() => {});
   }
 
   async getForumWebhook(forumChannel) {
@@ -371,6 +507,7 @@ class TicketService {
       if (parsed.action === "reopen") {
         this.db.getConnection().prepare("UPDATE tickets SET status = 'open', closed_at = NULL, reopen_count = reopen_count + 1 WHERE id = ?").run(parsed.ticketId);
         this.db.logEvent("ticket.reopened", "ticket", parsed.ticketId, { actor: interaction.user.id });
+        await this.syncCarryThreadIndicators(parsed.ticketId).catch(() => {});
         await interaction.reply({ content: `Ticket #${parsed.ticketId} reopened.`, ephemeral: true });
         return true;
       }
@@ -436,6 +573,7 @@ class TicketService {
   async closeTicket(ticketId) {
     this.db.getConnection().prepare("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?").run(Date.now(), Number(ticketId));
     this.db.logEvent("ticket.closed", "ticket", ticketId, {});
+    await this.syncCarryThreadIndicators(Number(ticketId)).catch(() => {});
   }
 
   async createCarryLinkedTicket({ guildId, customer, carryType, tier, amount }) {

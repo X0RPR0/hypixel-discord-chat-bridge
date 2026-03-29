@@ -587,6 +587,7 @@ class CarryService {
     const created = tx();
     this.ensureTicketThreadAndLog(created.ticketId, created.carryId, customerUser, normalizedType, normalizedTier, qty, created.finalPrice).catch(() => {});
     this.publishCarrierDashboard().catch(() => {});
+    this.syncCarryTicketIndicators(created.carryId).catch(() => {});
 
     const queueDepth = this.getQueueRows().findIndex((row) => Number(row.carry_id) === Number(created.carryId));
     const eta = this.etaEngine.estimate({
@@ -616,6 +617,7 @@ class CarryService {
 
     if (thread) {
       this.db.getConnection().prepare("UPDATE carries SET ticket_id = ? WHERE id = ?").run(ticketId, carryId);
+      await this.syncCarryTicketIndicators(carryId).catch(() => {});
     }
   }
 
@@ -646,6 +648,13 @@ class CarryService {
     return this.db.getConnection().prepare("SELECT * FROM carries WHERE id = ?").get(Number(carryId));
   }
 
+  async syncCarryTicketIndicators(carryId) {
+    if (!this.ticketService) return;
+    const carry = this.getCarryById(carryId);
+    if (!carry?.ticket_id) return;
+    await this.ticketService.syncCarryThreadIndicators(carry.ticket_id, carry).catch(() => {});
+  }
+
   async claimCarry(carryId, carrierId) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
@@ -664,6 +673,7 @@ class CarryService {
       .run(Date.now(), carrierId, carry.id);
 
     this.db.logEvent("carry.claimed", "carry", carry.id, { carrierId });
+    await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     return { ok: true, carryId: carry.id };
   }
@@ -690,6 +700,7 @@ class CarryService {
       .run(Date.now(), JSON.stringify(assigned), channelId, carry.id);
 
     this.db.logEvent("carry.started", "carry", carry.id, { carrierId, channelId });
+    await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     return { ok: true, carryId: carry.id, channelId };
   }
@@ -790,6 +801,7 @@ class CarryService {
     }
 
     this.db.getConnection().prepare("UPDATE carries SET status = 'pending_confirm' WHERE id = ?").run(carry.id);
+    await this.syncCarryTicketIndicators(carry.id);
     return { ok: true, finalized: false };
   }
 
@@ -810,6 +822,7 @@ class CarryService {
     }
 
     this.db.getConnection().prepare("UPDATE carries SET status = 'pending_confirm' WHERE id = ?").run(carry.id);
+    await this.syncCarryTicketIndicators(carry.id);
     return { ok: true, finalized: false };
   }
 
@@ -847,6 +860,7 @@ class CarryService {
 
     await this.closeExecutionChannel(carry.execution_channel_id);
     this.db.logEvent("carry.completed", "carry", carry.id, { duration });
+    await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
   }
 
@@ -898,6 +912,7 @@ class CarryService {
 
     await this.closeExecutionChannel(carry.execution_channel_id);
     this.db.logEvent("carry.cancelled", "carry", carry.id, { actorId });
+    await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     return { ok: true };
   }
@@ -979,6 +994,7 @@ class CarryService {
     this.db.getConnection().prepare("UPDATE queue_entries SET priority_score = ? WHERE carry_id = ? AND state IN ('queued','claimed')").run(priority, carry.id);
 
     this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId });
+    await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     return { ok: true };
   }
