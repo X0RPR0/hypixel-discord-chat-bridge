@@ -10,12 +10,12 @@ ENV NODE_ENV production
 # set work directory
 WORKDIR /usr/src/app
 
-# copy all sources to container
-COPY --chown=node:node . /usr/src/app
-
 # install dependencies
-RUN npm install --omit=dev
-RUN chown -R node:node /usr/src/app
+COPY --chown=node:node package.json package-lock.json /usr/src/app/
+RUN npm ci --omit=dev --no-audit --no-fund
+
+# copy app sources (kept after dependency layer for fast rebuilds)
+COPY --chown=node:node . /usr/src/app
 
 # run your app
 USER node
