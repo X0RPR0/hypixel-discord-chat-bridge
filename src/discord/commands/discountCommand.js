@@ -31,9 +31,9 @@ module.exports = {
         .setName("timed-carry")
         .setDescription("Timed carry-type discount")
         .addStringOption((o) => o.setName("type").setRequired(true).setDescription("Carry type"))
-        .addStringOption((o) => o.setName("tier").setDescription("Optional tier"))
         .addNumberOption((o) => o.setName("percentage").setRequired(true).setDescription("Percent").setMinValue(0).setMaxValue(95))
         .addStringOption((o) => o.setName("duration").setRequired(true).setDescription("e.g. 3h, 2d"))
+        .addStringOption((o) => o.setName("tier").setDescription("Optional tier"))
     )
     .addSubcommand((s) =>
       s
