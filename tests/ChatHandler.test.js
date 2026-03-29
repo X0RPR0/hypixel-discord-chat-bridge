@@ -186,4 +186,33 @@ describe("ChatHandler", () => {
       expect(username).toBe("DuckySoSkilled");
     });
   });
+
+  describe("extractKickDetails", () => {
+    it("parses kicker and reason", () => {
+      const message = "[MVP+] DuckySoSkilled was kicked from the guild by [MVP++] StaffMember for inactivity!";
+      const details = chatHandler.extractKickDetails(message);
+      expect(details).toEqual({
+        username: "DuckySoSkilled",
+        kickedBy: "StaffMember",
+        reason: "inactivity"
+      });
+    });
+
+    it("parses kicker without reason", () => {
+      const message = "DuckySoSkilled was kicked from the guild by StaffMember!";
+      const details = chatHandler.extractKickDetails(message);
+      expect(details).toEqual({
+        username: "DuckySoSkilled",
+        kickedBy: "StaffMember",
+        reason: null
+      });
+    });
+  });
+
+  describe("formatHistoryDate", () => {
+    it("returns UTC timestamp string", () => {
+      const formatted = chatHandler.formatHistoryDate(0);
+      expect(formatted).toBe("1970-01-01 00:00:00 UTC");
+    });
+  });
 });

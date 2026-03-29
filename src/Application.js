@@ -12,6 +12,7 @@ class Application {
     if (!existsSync("./data/linked.json")) writeFileSync("./data/linked.json", JSON.stringify({}));
     if (!existsSync("./data/inactivity.json")) writeFileSync("./data/inactivity.json", JSON.stringify({}));
     if (!existsSync("./data/activityTracker.json")) writeFileSync("./data/activityTracker.json", JSON.stringify({ version: 1, users: {} }, null, 2));
+    if (!existsSync("./data/guildMemberHistory.json")) writeFileSync("./data/guildMemberHistory.json", JSON.stringify({ version: 1, members: {} }, null, 2));
     if (!existsSync("./data/leaderboard.json")) {
       writeFileSync("./data/leaderboard.json", JSON.stringify({ version: 1, channelId: null, messageId: null, metric: "score", top: 15, lastSnapshot: null, snapshots: [] }, null, 2));
     }

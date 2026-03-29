@@ -8,7 +8,7 @@ const eventHandler = require("../../contracts/EventHandler.js");
 const { isUuid } = require("../../../API/utils/uuid.js");
 const messages = require("../../../messages.json");
 const config = require("../../../config.json");
-const { readFileSync } = require("fs");
+const { readFileSync, writeFileSync, existsSync } = require("fs");
 const updateCommand = require("../../discord/commands/updateCommand.js");
 const activityTracker = require("../../discord/other/activityTracker.js");
 
@@ -20,6 +20,8 @@ class StateHandler extends eventHandler {
     this.command = command;
     this.uuidCache = new Map();
     this.uuidCacheTtlMs = 60 * 60 * 1000;
+    this.guildMemberHistoryPath = "data/guildMemberHistory.json";
+    this.guildMemberHistory = this.loadGuildMemberHistory();
   }
 
   registerEvents(bot) {
@@ -156,12 +158,28 @@ class StateHandler extends eventHandler {
       const username = this.getUsernameFromEventMessage(message);
       await this.discord.joinRequestManager.onIngameAccepted(username).catch(() => {});
       setTimeout(() => this.tryToUpdateUser(username), 15000);
+      const rejoinContext = await this.getRejoinContext(username);
 
       await delay(1000);
       bot.chat(`/gc ${replaceVariables(messages.guildJoinMessage, { prefix: config.minecraft.bot.prefix })}`);
 
+      let joinedMessage = replaceVariables(messages.joinMessage, { username });
+      if (rejoinContext?.departure) {
+        const departure = rejoinContext.departure;
+        const departureLabel = departure.type === "kicked" ? "kicked" : "left";
+        const oldUsernameLine = rejoinContext.oldUsername ? `\nOld username: \`${rejoinContext.oldUsername}\`` : "";
+        const detailLines = [
+          `\nPrevious departure: ${departureLabel} on \`${this.formatHistoryDate(departure.date)}\``,
+          departure.type === "kicked" ? `\nKicked by: \`${departure.kickedBy || "Unknown"}\`` : "",
+          departure.type === "kicked" ? `\nKick reason: \`${departure.reason || "Unknown"}\`` : ""
+        ].join("");
+        joinedMessage = `${joinedMessage}\n\nPreviously in guild: yes${oldUsernameLine}${detailLines}`;
+
+        this.sendOfficerRejoinMessage(username, rejoinContext);
+      }
+
       const broadcastMessage = {
-        message: replaceVariables(messages.joinMessage, { username }),
+        message: joinedMessage,
         title: `Member Joined`,
         icon: `https://mc-heads.net/avatar/${username}`,
         color: 2067276
@@ -176,6 +194,10 @@ class StateHandler extends eventHandler {
     if (this.isLeaveMessage(message)) {
       const username = this.getUsernameFromEventMessage(message);
       setTimeout(() => this.tryToUpdateUser(username), 15000);
+      await this.recordGuildDeparture({
+        username,
+        type: "left"
+      });
 
       const broadcastMessage = {
         message: replaceVariables(messages.leaveMessage, { username }),
@@ -193,6 +215,13 @@ class StateHandler extends eventHandler {
     if (this.isKickMessage(message)) {
       const username = this.getUsernameFromEventMessage(message);
       setTimeout(() => this.tryToUpdateUser(username), 15000);
+      const kickDetails = this.extractKickDetails(message);
+      await this.recordGuildDeparture({
+        username,
+        type: "kicked",
+        kickedBy: kickDetails?.kickedBy || null,
+        reason: kickDetails?.reason || null
+      });
 
       const broadcastMessage = {
         message: replaceVariables(messages.kickMessage, { username }),
@@ -954,6 +983,177 @@ class StateHandler extends eventHandler {
       uuid,
       expiresAt: Date.now() + this.uuidCacheTtlMs
     });
+  }
+
+  loadGuildMemberHistory() {
+    const defaultState = { version: 1, members: {} };
+
+    try {
+      if (!existsSync(this.guildMemberHistoryPath)) {
+        writeFileSync(this.guildMemberHistoryPath, JSON.stringify(defaultState, null, 2));
+        return defaultState;
+      }
+
+      const raw = readFileSync(this.guildMemberHistoryPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return defaultState;
+      }
+
+      if (parsed.version === 1 && parsed.members && typeof parsed.members === "object") {
+        return parsed;
+      }
+
+      if (typeof parsed === "object") {
+        return { version: 1, members: parsed };
+      }
+    } catch {
+      // ignore file errors and continue with defaults
+    }
+
+    return defaultState;
+  }
+
+  saveGuildMemberHistory() {
+    try {
+      writeFileSync(this.guildMemberHistoryPath, JSON.stringify(this.guildMemberHistory, null, 2));
+    } catch {
+      // ignore file errors
+    }
+  }
+
+  normalizeUuid(uuid) {
+    return String(uuid || "")
+      .replaceAll("-", "")
+      .toLowerCase();
+  }
+
+  formatHistoryDate(date) {
+    const ts = typeof date === "number" ? date : Date.parse(date);
+    if (Number.isNaN(ts)) {
+      return "Unknown";
+    }
+
+    return new Date(ts).toISOString().replace("T", " ").replace(".000Z", " UTC");
+  }
+
+  extractKickDetails(message) {
+    const normalized = replaceAllRanks(String(message || "").trim());
+    const match = normalized.match(
+      /^(?<username>[A-Za-z0-9_]{3,16}) was kicked from the guild by (?<kickedBy>[A-Za-z0-9_]{3,16})(?: for (?<reason>.+?))?!?$/i
+    );
+
+    if (!match?.groups) {
+      return null;
+    }
+
+    return {
+      username: match.groups.username,
+      kickedBy: match.groups.kickedBy,
+      reason: match.groups.reason ? match.groups.reason.trim().replace(/[.!]$/, "") : null
+    };
+  }
+
+  async recordGuildDeparture({ username, type, kickedBy = null, reason = null }) {
+    try {
+      if (!username || !["left", "kicked"].includes(type)) {
+        return;
+      }
+
+      let uuid = this.getCachedUuid(username);
+      if (!uuid) {
+        uuid = await getUUID(username).catch(() => null);
+        if (!uuid) {
+          return;
+        }
+      }
+
+      this.cacheUuid(username, uuid);
+
+      const normalizedUuid = this.normalizeUuid(uuid);
+      const members = this.guildMemberHistory.members || {};
+      const existing = members[normalizedUuid] || {};
+
+      const previousNames = Array.isArray(existing.previousNames) ? [...existing.previousNames] : [];
+      if (existing.lastKnownUsername && existing.lastKnownUsername.toLowerCase() !== username.toLowerCase()) {
+        previousNames.push(existing.lastKnownUsername);
+      }
+
+      const dedupedPreviousNames = [...new Set(previousNames)];
+
+      members[normalizedUuid] = {
+        uuid: normalizedUuid,
+        lastKnownUsername: username,
+        previousNames: dedupedPreviousNames,
+        departure: {
+          type,
+          date: Date.now(),
+          kickedBy: type === "kicked" ? kickedBy : null,
+          reason: type === "kicked" ? reason : null
+        }
+      };
+
+      this.guildMemberHistory.members = members;
+      this.saveGuildMemberHistory();
+    } catch {
+      // ignore history errors
+    }
+  }
+
+  async getRejoinContext(username) {
+    try {
+      if (!username) {
+        return null;
+      }
+
+      let uuid = this.getCachedUuid(username);
+      if (!uuid) {
+        uuid = await getUUID(username).catch(() => null);
+        if (!uuid) {
+          return null;
+        }
+      }
+
+      this.cacheUuid(username, uuid);
+
+      const normalizedUuid = this.normalizeUuid(uuid);
+      const existing = this.guildMemberHistory.members?.[normalizedUuid];
+      if (!existing?.departure) {
+        return null;
+      }
+
+      const oldUsername =
+        existing.lastKnownUsername && existing.lastKnownUsername.toLowerCase() !== username.toLowerCase() ? existing.lastKnownUsername : null;
+
+      return {
+        uuid: normalizedUuid,
+        oldUsername,
+        departure: existing.departure
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  sendOfficerRejoinMessage(username, rejoinContext) {
+    try {
+      if (!rejoinContext?.departure) {
+        return;
+      }
+
+      const departure = rejoinContext.departure;
+      const action = departure.type === "kicked" ? "got kicked" : "left";
+      const oldUsernameText = rejoinContext.oldUsername ? ` (Old username: "${rejoinContext.oldUsername}")` : "";
+      const kickSuffix =
+        departure.type === "kicked" ? ` for: "${departure.reason || "Unknown"}" by "${departure.kickedBy || "Unknown"}"` : "";
+      const message = `User "${username}" was part of the guild before${oldUsernameText}. They ${action} on "${this.formatHistoryDate(
+        departure.date
+      )}"${kickSuffix}`;
+
+      bot.chat(`/oc ${message}`);
+    } catch {
+      // ignore officer chat errors
+    }
   }
 
   getCachedUuid(username) {
