@@ -190,11 +190,14 @@ class CarryService {
   }
 
   getCarrierRoleIds() {
-    return config.discord?.carry?.carrierRoleIds || [];
+    return (config.discord?.carry?.carrierRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id)));
   }
 
   getStaffRoleIds() {
-    return config.discord?.tickets?.staffRoleIds || [];
+    const configured = (config.discord?.tickets?.staffRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id)));
+    if (configured.length) return configured;
+    const fallback = config.discord?.commands?.commandRole;
+    return /^\d{17,20}$/.test(String(fallback || "")) ? [String(fallback)] : [];
   }
 
   isStaff(member) {
