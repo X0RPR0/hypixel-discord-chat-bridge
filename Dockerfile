@@ -20,8 +20,9 @@ RUN chown -R node:node /usr/src/app
 # run your app
 USER node
 RUN mkdir -p /home/node/.ssh \
-  && ssh-keyscan -H github.com >> /home/node/.ssh/known_hosts \
   && chmod 700 /home/node/.ssh \
+  && touch /home/node/.ssh/known_hosts \
+  && (ssh-keyscan -H github.com >> /home/node/.ssh/known_hosts 2>/dev/null || true) \
   && chmod 644 /home/node/.ssh/known_hosts \
   && git config --global pull.rebase false
 CMD ["dumb-init", "node", "index.js"]
