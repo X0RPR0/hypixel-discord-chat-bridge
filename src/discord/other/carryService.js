@@ -34,6 +34,7 @@ class CarryService {
     this.client = client;
     this.seedDefaultCatalog();
     this.startWatchdog();
+    this.reconcileMissingCarryArtifacts().catch(() => {});
   }
 
   shutdown() {
@@ -49,7 +50,54 @@ class CarryService {
     if (this.reassignmentInterval) clearInterval(this.reassignmentInterval);
     this.reassignmentInterval = setInterval(() => {
       this.checkStaleQueueEntries().catch(() => {});
+      this.reconcileMissingCarryArtifacts().catch(() => {});
     }, 60000);
+  }
+
+  async reconcileMissingCarryArtifacts() {
+    if (!this.client) return;
+    const openCarries = this.db
+      .getConnection()
+      .prepare(
+        `SELECT c.*,
+                t.forum_thread_id AS ticket_forum_thread_id
+         FROM carries c
+         LEFT JOIN tickets t ON t.id = c.ticket_id
+         WHERE c.status IN ('queued', 'claimed', 'in_progress', 'pending_confirm')`
+      )
+      .all();
+
+    for (const carry of openCarries) {
+      if (carry.ticket_id && !carry.ticket_forum_thread_id) {
+        const pseudoUser = carry.customer_discord_id
+          ? { id: String(carry.customer_discord_id), username: "customer", tag: "customer" }
+          : null;
+        await this.ensureTicketThreadAndLog(
+          Number(carry.ticket_id),
+          Number(carry.id),
+          pseudoUser,
+          carry.carry_type,
+          carry.tier,
+          Number(carry.amount),
+          Number(carry.final_price)
+        ).catch(() => {});
+      }
+
+      if (!carry.execution_channel_id) {
+        const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+        const created = await this.createExecutionChannel({ carry, carrierIds: assigned }).catch(() => null);
+        if (created?.ok && created.channel?.id) {
+          this.db
+            .getConnection()
+            .prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?")
+            .run(created.channel.id, carry.id);
+          this.db.logEvent("carry.execution_channel_backfill", "carry", carry.id, { channelId: created.channel.id });
+        }
+      } else {
+        const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned).catch(() => {});
+      }
+    }
   }
 
   seedDefaultCatalog() {
