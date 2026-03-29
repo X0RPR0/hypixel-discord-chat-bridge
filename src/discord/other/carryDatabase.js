@@ -366,6 +366,12 @@ class CarryDatabase {
       return fallback;
     }
 
+    const text = String(raw).trim();
+    // Keep Discord snowflakes and other integer-like IDs as strings to avoid precision loss.
+    if (/^-?\d+$/.test(text)) {
+      return text;
+    }
+
     try {
       return JSON.parse(raw);
     } catch {
