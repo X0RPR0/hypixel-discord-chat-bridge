@@ -55,7 +55,8 @@ class CarryService {
   }
 
   async reconcileMissingCarryArtifacts() {
-    if (!this.client) return;
+    const stats = { checked: 0, threadBackfilled: 0, channelBackfilled: 0, errors: 0 };
+    if (!this.client) return stats;
     const openCarries = this.db
       .getConnection()
       .prepare(
@@ -68,10 +69,12 @@ class CarryService {
       .all();
 
     for (const carry of openCarries) {
+      stats.checked += 1;
       if (carry.ticket_id && !carry.ticket_forum_thread_id) {
         const pseudoUser = carry.customer_discord_id
           ? { id: String(carry.customer_discord_id), username: "customer", tag: "customer" }
           : null;
+        const before = this.getCarryById(carry.id);
         await this.ensureTicketThreadAndLog(
           Number(carry.ticket_id),
           Number(carry.id),
@@ -80,7 +83,13 @@ class CarryService {
           carry.tier,
           Number(carry.amount),
           Number(carry.final_price)
-        ).catch(() => {});
+        ).catch(() => {
+          stats.errors += 1;
+        });
+        const afterTicket = before?.ticket_id ? this.db.getConnection().prepare("SELECT forum_thread_id FROM tickets WHERE id = ?").get(before.ticket_id) : null;
+        if (afterTicket?.forum_thread_id) {
+          stats.threadBackfilled += 1;
+        }
       }
 
       if (!carry.execution_channel_id) {
@@ -92,12 +101,19 @@ class CarryService {
             .prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?")
             .run(created.channel.id, carry.id);
           this.db.logEvent("carry.execution_channel_backfill", "carry", carry.id, { channelId: created.channel.id });
+          stats.channelBackfilled += 1;
+        } else {
+          stats.errors += 1;
         }
       } else {
         const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
-        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned).catch(() => {});
+        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, assigned).catch(() => {
+          stats.errors += 1;
+        });
       }
     }
+
+    return stats;
   }
 
   seedDefaultCatalog() {
@@ -251,6 +267,34 @@ class CarryService {
   getFreeCarryLimit() {
     return Number(this.db.getBinding("free_carry_limit", 1));
   }
+
+  getFreeCarryBonus(userId) {
+    if (!userId) return 0;
+    const row = this.db.getConnection().prepare("SELECT remaining_count FROM freecarry_bonus WHERE user_id = ?").get(String(userId));
+    return Math.max(0, Number(row?.remaining_count || 0));
+  }
+
+  grantFreeCarryBonus(userId, amount) {
+    const cleanAmount = Number(amount);
+    if (!userId || !Number.isInteger(cleanAmount) || cleanAmount <= 0) {
+      return { ok: false, reason: "Invalid user or amount." };
+    }
+
+    const now = Date.now();
+    this.db
+      .getConnection()
+      .prepare(
+        `INSERT INTO freecarry_bonus (user_id, remaining_count, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(user_id)
+         DO UPDATE SET remaining_count = remaining_count + excluded.remaining_count, updated_at = excluded.updated_at`
+      )
+      .run(String(userId), cleanAmount, now);
+    const remaining = this.getFreeCarryBonus(userId);
+    this.db.logEvent("freecarry.bonus_granted", "user", String(userId), { amount: cleanAmount, remaining });
+    return { ok: true, remaining };
+  }
+
   getWeekKeyUtc(ts = Date.now()) {
     const date = new Date(ts);
     const year = date.getUTCFullYear();
@@ -260,25 +304,71 @@ class CarryService {
     return `${year}-W${String(week).padStart(2, "0")}`;
   }
 
-  canUseFreeCarry(userId) {
+  getFreeCarryStatus(userId) {
+    if (!userId) {
+      return {
+        weekKey: this.getWeekKeyUtc(),
+        limit: this.getFreeCarryLimit(),
+        used: 0,
+        weeklyRemaining: 0,
+        bonusRemaining: 0,
+        totalRemaining: 0,
+        eligible: false,
+        source: null
+      };
+    }
+
     const weekKey = this.getWeekKeyUtc();
     const limit = this.getFreeCarryLimit();
     const row = this.db.getConnection().prepare("SELECT used_count FROM freecarry_usage WHERE user_id = ? AND week_key = ?").get(String(userId), weekKey);
     const used = Number(row?.used_count || 0);
-    return used < limit;
+    const weeklyRemaining = Math.max(0, limit - used);
+    const bonusRemaining = this.getFreeCarryBonus(userId);
+    const totalRemaining = weeklyRemaining + bonusRemaining;
+    return {
+      weekKey,
+      limit,
+      used,
+      weeklyRemaining,
+      bonusRemaining,
+      totalRemaining,
+      eligible: totalRemaining > 0,
+      source: weeklyRemaining > 0 ? "weekly" : bonusRemaining > 0 ? "bonus" : null
+    };
+  }
+
+  canUseFreeCarry(userId) {
+    return this.getFreeCarryStatus(userId).eligible;
   }
 
   consumeFreeCarry(userId) {
-    const weekKey = this.getWeekKeyUtc();
-    this.db
-      .getConnection()
-      .prepare(
-        `INSERT INTO freecarry_usage (user_id, week_key, used_count)
-         VALUES (?, ?, 1)
-         ON CONFLICT(user_id, week_key)
-         DO UPDATE SET used_count = used_count + 1`
-      )
-      .run(String(userId), weekKey);
+    const status = this.getFreeCarryStatus(userId);
+    if (!status.eligible) {
+      return { ok: false, source: null };
+    }
+
+    if (status.weeklyRemaining > 0) {
+      this.db
+        .getConnection()
+        .prepare(
+          `INSERT INTO freecarry_usage (user_id, week_key, used_count)
+           VALUES (?, ?, 1)
+           ON CONFLICT(user_id, week_key)
+           DO UPDATE SET used_count = used_count + 1`
+        )
+        .run(String(userId), status.weekKey);
+      return { ok: true, source: "weekly" };
+    }
+
+    if (status.bonusRemaining > 0) {
+      this.db
+        .getConnection()
+        .prepare("UPDATE freecarry_bonus SET remaining_count = MAX(0, remaining_count - 1), updated_at = ? WHERE user_id = ?")
+        .run(Date.now(), String(userId));
+      return { ok: true, source: "bonus" };
+    }
+
+    return { ok: false, source: null };
   }
 
   resetFreeCarryWeekly() {
@@ -627,7 +717,8 @@ class CarryService {
       tier: normalizedTier
     });
 
-    const freeEligible = !isPaid && !!customerUser?.id && this.canUseFreeCarry(customerUser.id);
+    const freeStatus = !isPaid && !!customerUser?.id ? this.getFreeCarryStatus(customerUser.id) : null;
+    const freeEligible = !isPaid && !!freeStatus?.eligible;
     const freeReduction = freeEligible ? Number(catalog.price) : 0;
 
     const finalPrice = Math.max(0, Number((discount.finalTotal - freeReduction).toFixed(2)));
@@ -689,8 +780,10 @@ class CarryService {
         .prepare("INSERT INTO queue_entries (carry_id, state, priority_score, created_at) VALUES (?, 'queued', ?, ?)")
         .run(carryId, priority, now);
 
+      let freeSource = null;
       if (freeEligible && customerUser?.id) {
-        this.consumeFreeCarry(customerUser.id);
+        const consumed = this.consumeFreeCarry(customerUser.id);
+        freeSource = consumed.source || freeStatus?.source || null;
       }
 
       if (ticketId) {
@@ -709,7 +802,8 @@ class CarryService {
         tier: normalizedTier,
         amount: qty,
         isPaid,
-        freeEligible
+        freeEligible,
+        freeSource
       });
 
       return {
@@ -718,6 +812,7 @@ class CarryService {
         finalPrice,
         discount,
         freeEligible,
+        freeSource,
         totalDiscount,
         category: catalog.category
       };
@@ -1266,14 +1361,10 @@ class CarryService {
 
     if (parsed.action === "check_free") {
       const userId = interaction.user?.id;
-      const limit = this.getFreeCarryLimit();
-      const weekKey = this.getWeekKeyUtc();
-      const row = this.db.getConnection().prepare("SELECT used_count FROM freecarry_usage WHERE user_id = ? AND week_key = ?").get(String(userId), weekKey);
-      const used = Number(row?.used_count || 0);
-      const remaining = Math.max(0, limit - used);
+      const status = this.getFreeCarryStatus(userId);
       await interaction.reply({
         ephemeral: true,
-        content: `Week: \`${weekKey}\`\nFree carries: **${remaining}/${limit}** remaining (${used} used).`
+        content: `Week: \`${status.weekKey}\`\nWeekly free carries: **${status.weeklyRemaining}/${status.limit}** remaining (${status.used} used).\nBonus credits: **${status.bonusRemaining}**\nTotal free carries available: **${status.totalRemaining}**`
       });
       return true;
     }
@@ -1457,7 +1548,7 @@ class CarryService {
               { name: "Discount", value: `${created.totalDiscount}`, inline: true },
               { name: "Final", value: `${created.finalPrice}`, inline: true },
               { name: "ETA", value: `~${mins} min`, inline: true },
-              { name: "Free Carry", value: created.freeEligible ? "Applied (weekly)" : "Not available this week", inline: true }
+              { name: "Free Carry", value: created.freeEligible ? `Applied (${created.freeSource || "weekly"})` : "Not available", inline: true }
             )
         ]
       });

@@ -327,9 +327,53 @@ class GiveawayService {
     return [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`giveaway:join:${giveawayId}`).setLabel("Join").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`giveaway:leave:${giveawayId}`).setLabel("Leave").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`giveaway:leave:${giveawayId}`).setLabel("Leave").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`giveaway:entrants:${giveawayId}:0`).setLabel("View Entrants").setStyle(ButtonStyle.Secondary)
       )
     ];
+  }
+
+  getEntrantDisplayRows(giveaway) {
+    const discordRows = (giveaway?.entrants?.discord || []).map((entry) => ({
+      key: `discord:${entry.id}`,
+      text: `Discord: <@${entry.id}>`
+    }));
+    const ingameRows = (giveaway?.entrants?.ingame || []).map((entry) => ({
+      key: `ingame:${String(entry.username || "").toLowerCase()}`,
+      text: `In-game: \`${entry.username}\``
+    }));
+    return [...discordRows, ...ingameRows];
+  }
+
+  buildEntrantsPage(giveaway, page = 0, pageSize = 10) {
+    const rows = this.getEntrantDisplayRows(giveaway);
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const safePage = Math.min(Math.max(0, Number(page) || 0), totalPages - 1);
+    const start = safePage * pageSize;
+    const pageRows = rows.slice(start, start + pageSize);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x3498db)
+      .setTitle(`Giveaway #${giveaway.id} Entrants`)
+      .setDescription(pageRows.length ? pageRows.map((row, idx) => `${start + idx + 1}. ${row.text}`).join("\n") : "No entrants yet.")
+      .setFooter({ text: `Page ${safePage + 1}/${totalPages} • Total entrants: ${rows.length}` });
+
+    const components = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`giveaway:entrants:${giveaway.id}:${Math.max(0, safePage - 1)}`)
+          .setLabel("Prev")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(safePage <= 0),
+        new ButtonBuilder()
+          .setCustomId(`giveaway:entrants:${giveaway.id}:${Math.min(totalPages - 1, safePage + 1)}`)
+          .setLabel("Next")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(safePage >= totalPages - 1)
+      )
+    ];
+
+    return { embed, components };
   }
 
   async resolveChannel(channelId) {

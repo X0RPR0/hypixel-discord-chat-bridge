@@ -14,7 +14,8 @@ module.exports = {
         .addRoleOption((o) => o.setName("role").setDescription("Role").setRequired(true))
         .addNumberOption((o) => o.setName("value").setDescription("Priority value").setRequired(true))
     )
-    .addSubcommand((s) => s.setName("reset").setDescription("Reset queue and cancel queued carries")),
+    .addSubcommand((s) => s.setName("reset").setDescription("Reset queue and cancel queued carries"))
+    .addSubcommand((s) => s.setName("repair").setDescription("Backfill missing carry channels/forum threads for active carries")),
   moderatorOnly: true,
 
   execute: async (interaction) => {
@@ -45,6 +46,18 @@ module.exports = {
       service.resetQueue();
       await service.publishCarrierDashboard();
       return interaction.editReply({ embeds: [new SuccessEmbed("Queue reset complete.")] });
+    }
+
+    if (sub === "repair") {
+      const result = await service.reconcileMissingCarryArtifacts();
+      await service.publishCarrierDashboard().catch(() => {});
+      return interaction.editReply({
+        embeds: [
+          new SuccessEmbed(
+            `Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.`
+          )
+        ]
+      });
     }
 
     return interaction.editReply({ embeds: [new ErrorEmbed("Unknown queue subcommand.")] });

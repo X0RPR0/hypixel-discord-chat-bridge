@@ -276,6 +276,12 @@ class CarryDatabase {
         PRIMARY KEY(user_id, week_key)
       );
 
+      CREATE TABLE IF NOT EXISTS freecarry_bonus (
+        user_id TEXT PRIMARY KEY,
+        remaining_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS carrier_stats (
         user_id TEXT PRIMARY KEY,
         completed_count INTEGER NOT NULL DEFAULT 0,

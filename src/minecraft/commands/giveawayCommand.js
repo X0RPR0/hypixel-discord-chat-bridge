@@ -4,13 +4,28 @@ const giveawayService = require("../../discord/other/giveawayService.js");
 
 function parseCommandTokens(raw) {
   const tokens = [];
-  const regex = /"([^"]*)"|(\S+)/g;
+  const regex = /"([^"]*)"|“([^”]*)”|(\S+)/g;
   let match = null;
   while ((match = regex.exec(raw)) !== null) {
-    tokens.push((match[1] ?? match[2] ?? "").trim());
+    tokens.push((match[1] ?? match[2] ?? match[3] ?? "").trim());
   }
 
   return tokens.filter((token) => token.length > 0);
+}
+
+function parseGiveawayArgs(raw) {
+  const trimmed = String(raw || "").trim();
+  const strict = trimmed.match(/^"([^"]+)"(?:\s+"([^"]+)")?(?:\s+"([^"]+)")?\s*$/);
+  if (strict) {
+    return [strict[1], strict[2] || "1d", strict[3] || "1"];
+  }
+
+  const tokens = parseCommandTokens(trimmed);
+  if (!tokens.length) {
+    return [];
+  }
+
+  return [tokens[0], tokens[1] || "1d", tokens[2] || "1"];
 }
 
 class GiveawayCommand extends minecraftCommand {
@@ -45,7 +60,7 @@ class GiveawayCommand extends minecraftCommand {
         return this.send(this.getUsage());
       }
 
-      const tokens = parseCommandTokens(content);
+      const tokens = parseGiveawayArgs(content);
       if (tokens.length === 0) {
         return this.send(this.getUsage());
       }

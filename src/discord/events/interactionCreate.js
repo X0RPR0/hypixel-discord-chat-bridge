@@ -82,7 +82,7 @@ module.exports = {
 
         if (interaction.customId.startsWith("giveaway:")) {
           await interaction.deferReply({ ephemeral: true }).catch(() => {});
-          const [, action, id] = interaction.customId.split(":");
+          const [, action, id, pageRaw] = interaction.customId.split(":");
           const giveawayId = Number(id);
           if (!Number.isInteger(giveawayId) || giveawayId <= 0) {
             return interaction.editReply({ embeds: [new ErrorEmbed("Invalid giveaway id.")] });
@@ -110,6 +110,26 @@ module.exports = {
             }
 
             return interaction.editReply({ embeds: [new SuccessEmbed(`Left giveaway #${giveawayId}.`)] });
+          }
+
+          if (action === "entrants") {
+            const memberRoleIds = interaction.member?.roles?.cache?.map((role) => role.id) || [];
+            const isAdmin = giveawayService.isBridgeAdmin({ discordUserId: interaction.user.id, memberRoleIds });
+            if (!isAdmin) {
+              return interaction.editReply({ embeds: [new ErrorEmbed("Only bridge admins can view the entrant list.")] });
+            }
+
+            const giveaway = giveawayService.getGiveaway(giveawayId);
+            if (!giveaway) {
+              return interaction.editReply({ embeds: [new ErrorEmbed("Giveaway not found or already ended.")] });
+            }
+
+            const page = Number(pageRaw || 0);
+            const rendered = giveawayService.buildEntrantsPage(giveaway, Number.isInteger(page) ? page : 0);
+            return interaction.editReply({
+              embeds: [rendered.embed],
+              components: rendered.components
+            });
           }
 
           return interaction.editReply({ embeds: [new ErrorEmbed("Invalid giveaway action.")] });
