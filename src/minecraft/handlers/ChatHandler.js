@@ -160,8 +160,11 @@ class StateHandler extends eventHandler {
       setTimeout(() => this.tryToUpdateUser(username), 15000);
       const rejoinContext = await this.getRejoinContext(username);
 
-      await delay(1000);
-      bot.chat(`/gc ${replaceVariables(messages.guildJoinMessage, { prefix: config.minecraft.bot.prefix })}`);
+      await this.sendGuildCommandWithRateLimitRetry(`/gc ${replaceVariables(messages.guildJoinMessage, { prefix: config.minecraft.bot.prefix })}`, {
+        delayMs: 1000,
+        maxRetries: 1,
+        retryDelayMs: 2500
+      });
 
       let joinedMessage = replaceVariables(messages.joinMessage, { username });
       if (rejoinContext?.departure) {
@@ -175,7 +178,7 @@ class StateHandler extends eventHandler {
         ].join("");
         joinedMessage = `${joinedMessage}\n\nPreviously in guild: yes${oldUsernameLine}${detailLines}`;
 
-        this.sendOfficerRejoinMessage(username, rejoinContext);
+        await this.sendOfficerRejoinMessage(username, rejoinContext);
       }
 
       const broadcastMessage = {
@@ -1135,7 +1138,7 @@ class StateHandler extends eventHandler {
     }
   }
 
-  sendOfficerRejoinMessage(username, rejoinContext) {
+  async sendOfficerRejoinMessage(username, rejoinContext) {
     try {
       if (!rejoinContext?.departure) {
         return;
@@ -1150,10 +1153,76 @@ class StateHandler extends eventHandler {
         departure.date
       )}"${kickSuffix}`;
 
-      bot.chat(`/oc ${message}`);
+      await this.sendGuildCommandWithRateLimitRetry(`/oc ${message}`, {
+        delayMs: 1800,
+        maxRetries: 2,
+        retryDelayMs: 3000
+      });
     } catch {
       // ignore officer chat errors
     }
+  }
+
+  async sendGuildCommandWithRateLimitRetry(command, { delayMs = 0, maxRetries = 0, retryDelayMs = 2500 } = {}) {
+    try {
+      if (!command || typeof command !== "string") {
+        return false;
+      }
+
+      if (delayMs > 0) {
+        await delay(delayMs);
+      }
+
+      const attempts = Math.max(0, Number(maxRetries || 0)) + 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const rateLimited = await new Promise((resolve) => {
+          let settled = false;
+
+          const cleanup = () => {
+            bot.removeListener("message", messageListener);
+            clearTimeout(timeout);
+          };
+
+          const finish = (value) => {
+            if (settled) {
+              return;
+            }
+
+            settled = true;
+            cleanup();
+            resolve(value);
+          };
+
+          const messageListener = (event) => {
+            const receivedMessage = event.toString();
+            if (receivedMessage.includes("You are sending commands too fast!")) {
+              finish(true);
+            }
+          };
+
+          const timeout = setTimeout(() => finish(false), 1500);
+          bot.on("message", messageListener);
+
+          try {
+            bot.chat(command);
+          } catch {
+            finish(false);
+          }
+        });
+
+        if (rateLimited === false) {
+          return true;
+        }
+
+        if (attempt < attempts - 1) {
+          await delay(retryDelayMs);
+        }
+      }
+    } catch {
+      // ignore send/retry errors
+    }
+
+    return false;
   }
 
   getCachedUuid(username) {
