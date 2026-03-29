@@ -10,25 +10,37 @@ module.exports = {
       s
         .setName("carry-dashboard")
         .setDescription("Set carry request dashboard channel")
-        .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+        .addChannelOption((o) =>
+          o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        )
     )
     .addSubcommand((s) =>
       s
         .setName("carrier-dashboard")
         .setDescription("Set carrier dashboard channel")
-        .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+        .addChannelOption((o) =>
+          o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        )
     )
     .addSubcommand((s) =>
       s
         .setName("ticket-dashboard")
         .setDescription("Set ticket dashboard channel")
-        .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+        .addChannelOption((o) =>
+          o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        )
     )
     .addSubcommand((s) =>
       s
         .setName("ticket-logs")
         .setDescription("Set ticket forum logs channel")
         .addChannelOption((o) => o.setName("forum_channel").setDescription("Forum channel").setRequired(true).addChannelTypes(ChannelType.GuildForum))
+    )
+    .addSubcommand((s) =>
+      s
+        .setName("ticket-logs-id")
+        .setDescription("Set ticket forum logs channel by ID")
+        .addStringOption((o) => o.setName("forum_id").setDescription("Forum channel ID").setRequired(true))
     )
     .addSubcommand((s) =>
       s
@@ -81,6 +93,18 @@ module.exports = {
 
     if (sub === "ticket-logs") {
       const forum = interaction.options.getChannel("forum_channel", true);
+      ticketService.setTicketLogsForumId(forum.id);
+      return interaction.editReply({ embeds: [new SuccessEmbed(`Ticket logs forum set to <#${forum.id}>.`)] });
+    }
+
+    if (sub === "ticket-logs-id") {
+      const input = interaction.options.getString("forum_id", true).trim();
+      const forumId = input.replace(/[<#>]/g, "");
+      const forum = await interaction.client.channels.fetch(forumId).catch(() => null);
+      if (!forum || forum.type !== ChannelType.GuildForum) {
+        return interaction.editReply({ embeds: [new ErrorEmbed("Invalid forum channel ID. The channel must be a forum.")] });
+      }
+
       ticketService.setTicketLogsForumId(forum.id);
       return interaction.editReply({ embeds: [new SuccessEmbed(`Ticket logs forum set to <#${forum.id}>.`)] });
     }

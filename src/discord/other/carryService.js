@@ -7,6 +7,7 @@ const {
   EmbedBuilder,
   ModalBuilder,
   PermissionsBitField,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle
 } = require("discord.js");
@@ -311,6 +312,13 @@ class CarryService {
       .all();
   }
 
+  getEnabledCatalog() {
+    return this.db
+      .getConnection()
+      .prepare("SELECT carry_type, tier, category, price FROM carry_catalog WHERE enabled = 1 ORDER BY category ASC, carry_type ASC, tier ASC")
+      .all();
+  }
+
   getActiveCarrierStats() {
     const row = this.db
       .getConnection()
@@ -324,7 +332,7 @@ class CarryService {
     if (!targetId || !this.client) return null;
 
     const channel = await this.client.channels.fetch(targetId).catch(() => null);
-    if (!channel || channel.type !== ChannelType.GuildText) return null;
+    if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return null;
 
     this.setCarryDashboardChannelId(channel.id);
 
@@ -332,16 +340,50 @@ class CarryService {
     let message = null;
     if (messageId) message = await channel.messages.fetch(messageId).catch(() => null);
 
+    const catalog = this.getEnabledCatalog();
+    const byCategory = new Map();
+    for (const item of catalog) {
+      const key = String(item.category || "other");
+      const list = byCategory.get(key) || [];
+      list.push(item);
+      byCategory.set(key, list);
+    }
+
+    const rows = [];
+    for (const [category, items] of byCategory.entries()) {
+      const options = items.slice(0, 25).map((item) => ({
+        label: `${item.carry_type} ${item.tier}`.slice(0, 100),
+        description: `Price: ${Number(item.price || 0)} each`.slice(0, 100),
+        value: `${item.carry_type}|${item.tier}`.slice(0, 100)
+      }));
+      if (options.length === 0) continue;
+
+      rows.push(
+        new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`${CARRY_PREFIX}select:${category}`)
+            .setPlaceholder(`Select ${category} carry`)
+            .addOptions(options)
+        )
+      );
+    }
+
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}check_free`).setLabel("Check Free Carry").setStyle(ButtonStyle.Secondary)
+      )
+    );
+
     const payload = {
       embeds: [
         new EmbedBuilder()
           .setColor(0x5865f2)
           .setTitle("Carry Request Dashboard")
-          .setDescription("Request carries and view pricing previews. Discounts are applied automatically.")
+          .setDescription(
+            "Select a carry from the dropdown, then enter amount.\nYou get a weekly free carry (default: 1/week UTC). Use **Check Free Carry** to view your status."
+          )
       ],
-      components: [
-        new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${CARRY_PREFIX}request`).setLabel("Request Carry").setStyle(ButtonStyle.Primary))
-      ]
+      components: rows
     };
 
     if (message) {
@@ -359,7 +401,7 @@ class CarryService {
     if (!targetId || !this.client) return null;
 
     const channel = await this.client.channels.fetch(targetId).catch(() => null);
-    if (!channel || channel.type !== ChannelType.GuildText) return null;
+    if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return null;
 
     this.setCarrierDashboardChannelId(channel.id);
 
@@ -380,11 +422,7 @@ class CarryService {
       ],
       components: [
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim`).setLabel("Claim").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}start`).setLabel("Start").setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}complete`).setLabel("Complete").setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel`).setLabel("Cancel").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}mark_paid`).setLabel("Mark Paid").setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim`).setLabel("Claim").setStyle(ButtonStyle.Success)
         )
       ]
     };
@@ -961,8 +999,10 @@ class CarryService {
     if (typeof customId !== "string") return null;
     if (!customId.startsWith(CARRY_PREFIX)) return null;
     const payload = customId.slice(CARRY_PREFIX.length);
-    const [action, id] = payload.split(":");
-    return { action, carryId: id ? Number(id) : null };
+    const [action, ...parts] = payload.split(":");
+    const rawId = parts.length ? parts.join(":") : null;
+    const carryId = rawId && /^\d+$/.test(rawId) ? Number(rawId) : null;
+    return { action, carryId, rawId };
   }
 
   async handleComponent(interaction) {
@@ -977,6 +1017,38 @@ class CarryService {
         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("amount").setLabel("Amount").setStyle(TextInputStyle.Short).setRequired(true))
       );
       await interaction.showModal(modal);
+      return true;
+    }
+
+    if (parsed.action === "select") {
+      const selected = interaction.values?.[0];
+      const [carryType, tier] = String(selected || "").split("|");
+      if (!carryType || !tier) {
+        await interaction.reply({ content: "Invalid carry selection.", ephemeral: true });
+        return true;
+      }
+
+      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}request:${carryType}|${tier}`).setTitle(`Request ${carryType} ${tier}`);
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId("amount").setLabel("Amount").setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder("e.g. 1")
+        )
+      );
+      await interaction.showModal(modal);
+      return true;
+    }
+
+    if (parsed.action === "check_free") {
+      const userId = interaction.user?.id;
+      const limit = this.getFreeCarryLimit();
+      const weekKey = this.getWeekKeyUtc();
+      const row = this.db.getConnection().prepare("SELECT used_count FROM freecarry_usage WHERE user_id = ? AND week_key = ?").get(String(userId), weekKey);
+      const used = Number(row?.used_count || 0);
+      const remaining = Math.max(0, limit - used);
+      await interaction.reply({
+        ephemeral: true,
+        content: `Week: \`${weekKey}\`\nFree carries: **${remaining}/${limit}** remaining (${used} used).`
+      });
       return true;
     }
 
@@ -1045,10 +1117,32 @@ class CarryService {
     if (!interaction.customId?.startsWith(CARRY_MODAL_PREFIX)) return false;
 
     const action = interaction.customId.slice(CARRY_MODAL_PREFIX.length);
-    if (action === "request") {
+    if (action.startsWith("request")) {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
-      const parsed = this.parseCarryFromModal(interaction);
-      const created = this.createCarryRequest({ guildId: interaction.guildId, customerUser: interaction.user, member: interaction.member, carryType: parsed.carryType, tier: parsed.tier, amount: parsed.amount, source: "dashboard" });
+      let carryType = null;
+      let tier = null;
+      let amount = null;
+
+      if (action.includes(":")) {
+        const encoded = action.split(":").slice(1).join(":");
+        [carryType, tier] = String(encoded || "").split("|");
+        amount = Number(interaction.fields.getTextInputValue("amount"));
+      } else {
+        const parsed = this.parseCarryFromModal(interaction);
+        carryType = parsed.carryType;
+        tier = parsed.tier;
+        amount = parsed.amount;
+      }
+
+      const created = this.createCarryRequest({
+        guildId: interaction.guildId,
+        customerUser: interaction.user,
+        member: interaction.member,
+        carryType,
+        tier,
+        amount,
+        source: "dashboard"
+      });
 
       if (!created.ok) {
         await interaction.editReply({ content: created.reason });
@@ -1068,7 +1162,7 @@ class CarryService {
               { name: "Discount", value: `${created.totalDiscount}`, inline: true },
               { name: "Final", value: `${created.finalPrice}`, inline: true },
               { name: "ETA", value: `~${mins} min`, inline: true },
-              { name: "Free Carry", value: created.freeEligible ? "Applied" : "No", inline: true }
+              { name: "Free Carry", value: created.freeEligible ? "Applied (weekly)" : "Not available this week", inline: true }
             )
         ]
       });

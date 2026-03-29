@@ -103,7 +103,7 @@ class TicketService {
     }
 
     const channel = await this.client.channels.fetch(targetId).catch(() => null);
-    if (!channel || channel.type !== ChannelType.GuildText) {
+    if (!channel || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
       return null;
     }
 

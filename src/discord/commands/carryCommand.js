@@ -36,12 +36,14 @@ module.exports = {
       const name = interaction.options.getString("name", true);
       const tiers = interaction.options.getString("tiers", true);
       const count = service.addCarryTypeWithTiers(name, tiers);
+      await service.publishCarryDashboard().catch(() => {});
       return interaction.editReply({ embeds: [new SuccessEmbed(`Added/updated ${count} tier(s) for **${name}**.`)] });
     }
 
     if (sub === "remove") {
       const name = interaction.options.getString("name", true);
       const changes = service.removeCarryType(name);
+      await service.publishCarryDashboard().catch(() => {});
       return interaction.editReply({ embeds: [new SuccessEmbed(`Removed ${changes} carry tier entries for **${name}**.`)] });
     }
 
@@ -51,18 +53,21 @@ module.exports = {
       const price = interaction.options.getNumber("price", true);
       const updated = service.setCarryPrice(type, tier, price);
       if (!updated) return interaction.editReply({ embeds: [new ErrorEmbed("Carry type/tier not found.")] });
+      await service.publishCarryDashboard().catch(() => {});
       return interaction.editReply({ embeds: [new SuccessEmbed(`Set **${type} ${tier}** price to ${price}.`)] });
     }
 
     if (sub === "enable") {
       const type = interaction.options.getString("type", true);
       const changes = service.setCarryEnabled(type, true);
+      await service.publishCarryDashboard().catch(() => {});
       return interaction.editReply({ embeds: [new SuccessEmbed(`Enabled ${changes} entries for **${type}**.`)] });
     }
 
     if (sub === "disable") {
       const type = interaction.options.getString("type", true);
       const changes = service.setCarryEnabled(type, false);
+      await service.publishCarryDashboard().catch(() => {});
       return interaction.editReply({ embeds: [new SuccessEmbed(`Disabled ${changes} entries for **${type}**.`)] });
     }
 

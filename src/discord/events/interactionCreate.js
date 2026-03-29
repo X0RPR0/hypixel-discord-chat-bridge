@@ -144,6 +144,13 @@ module.exports = {
           const embed = new SuccessEmbed(`Successfully accepted **${username}** into the guild.`);
           await interaction.followUp({ embeds: [embed], ephemeral: true });
         }
+      } else if (interaction.isStringSelectMenu()) {
+        if (interaction.client.carryService) {
+          const handledByCarry = await interaction.client.carryService.handleComponent(interaction).catch(() => false);
+          if (handledByCarry) {
+            return;
+          }
+        }
       } else if (interaction.isModalSubmit()) {
         if (interaction.client.ticketService) {
           const handledByTicketModal = await interaction.client.ticketService.handleModal(interaction).catch(() => false);

@@ -25,7 +25,7 @@ module.exports = {
           option
             .setName("channel")
             .setDescription("Channel to post the giveaway")
-            .addChannelTypes(ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread)
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread)
         )
         .addRoleOption((option) => option.setName("required_role").setDescription("Role required to join this giveaway"))
     )
@@ -53,7 +53,7 @@ module.exports = {
           option
             .setName("channel")
             .setDescription("Default giveaway channel")
-            .addChannelTypes(ChannelType.GuildText, ChannelType.PublicThread, ChannelType.PrivateThread)
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread)
         )
         .addBooleanOption((option) => option.setName("clear").setDescription("Clear default giveaway channel"))
     ),
