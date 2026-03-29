@@ -130,7 +130,7 @@ class TicketService {
       components: this.buildDashboardRows()
     };
 
-    if (message) {
+    if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
       return message;
     }

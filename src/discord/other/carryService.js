@@ -394,7 +394,7 @@ class CarryService {
       components: rows
     };
 
-    if (message) {
+    if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
       return message;
     }
@@ -466,7 +466,7 @@ class CarryService {
     let message = null;
     if (messageId) message = await channel.messages.fetch(messageId).catch(() => null);
 
-    if (message) {
+    if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
       return message;
     }
@@ -522,7 +522,7 @@ class CarryService {
     let message = null;
     if (messageId) message = await channel.messages.fetch(messageId).catch(() => null);
 
-    if (message) {
+    if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
       return message;
     }
