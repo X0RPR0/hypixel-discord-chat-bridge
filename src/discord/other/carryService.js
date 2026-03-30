@@ -319,10 +319,10 @@ class CarryService {
   }
 
   buildCarryDisplayName({ type, amount, name }) {
-    const typePart = String(type || "carry").trim();
-    const amountPart = String(amount || "-").trim();
-    const namePart = String(name || "customer").trim();
-    return `├:tickets: 》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
+    const typePart = this.sanitizeNamePart(type || "carry", "carry");
+    const amountPart = this.sanitizeNamePart(amount || "-", "-");
+    const namePart = this.sanitizeNamePart(name || "customer", "customer");
+    return `├🎟️》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
   }
 
   sanitizeTextChannelName(name, fallback = "carry-ticket") {
@@ -1148,7 +1148,7 @@ class CarryService {
       amount: carry.amount || "-",
       name: carry.customer_username || "customer"
     });
-    const name = this.sanitizeTextChannelName(displayName);
+    const name = displayName;
 
     const staffRoleIds = this.getStaffRoleIds();
     const overwrites = [
@@ -1183,7 +1183,7 @@ class CarryService {
       });
     }
 
-    const channel = await guild.channels
+    let channel = await guild.channels
       .create({
         name,
         type: ChannelType.GuildText,
@@ -1192,6 +1192,19 @@ class CarryService {
         permissionOverwrites: overwrites
       })
       .catch((error) => ({ __error: error }));
+
+    if (channel?.__error) {
+      const fallbackName = this.sanitizeTextChannelName(displayName);
+      channel = await guild.channels
+        .create({
+          name: fallbackName,
+          type: ChannelType.GuildText,
+          parent: parentId,
+          topic: displayName,
+          permissionOverwrites: overwrites
+        })
+        .catch((error) => ({ __error: error }));
+    }
 
     if (!channel || channel.__error) {
       return {

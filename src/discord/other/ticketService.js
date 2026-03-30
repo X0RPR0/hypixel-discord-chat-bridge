@@ -120,10 +120,10 @@ class TicketService {
   }
 
   buildTicketDisplayName({ type, amount, name }) {
-    const typePart = String(type || "carry").trim();
-    const amountPart = String(amount || "-").trim();
-    const namePart = String(name || "customer").trim();
-    return `├:tickets: 》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
+    const typePart = this.sanitizeNamePart(type || "carry", "carry");
+    const amountPart = this.sanitizeNamePart(amount || "-", "-");
+    const namePart = this.sanitizeNamePart(name || "customer", "customer");
+    return `├🎟️》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
   }
 
   async publishDashboard(channelId = null) {
