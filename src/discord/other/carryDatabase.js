@@ -337,6 +337,8 @@ class CarryDatabase {
     tryExec("ALTER TABLE carries ADD COLUMN execution_message_id TEXT;");
     tryExec("ALTER TABLE carries ADD COLUMN pending_log_runs INTEGER NOT NULL DEFAULT 0;");
     tryExec("ALTER TABLE carries ADD COLUMN pending_log_actor_id TEXT;");
+    tryExec("ALTER TABLE carries ADD COLUMN free_carry_source TEXT;");
+    tryExec("ALTER TABLE carries ADD COLUMN last_activity_at INTEGER;");
     tryExec("ALTER TABLE carrier_stats ADD COLUMN completed_tickets_count INTEGER NOT NULL DEFAULT 0;");
     tryExec("ALTER TABLE carrier_stats ADD COLUMN actual_carries_count INTEGER NOT NULL DEFAULT 0;");
     tryExec("ALTER TABLE carrier_stats ADD COLUMN score_total REAL NOT NULL DEFAULT 0;");

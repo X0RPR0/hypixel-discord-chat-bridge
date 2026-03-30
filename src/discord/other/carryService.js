@@ -66,6 +66,7 @@ class CarryService {
         await this.checkStaleQueueEntries().catch(() => {});
         await this.reconcileMissingCarryArtifacts().catch(() => {});
         await this.sampleCarrierOnlineCount().catch(() => {});
+        await this.autoCloseInactiveCarries().catch(() => {});
       })()
         .catch(() => {})
         .finally(() => {
@@ -966,6 +967,7 @@ class CarryService {
     const freeStatus = !isPaid && !!customerUser?.id ? this.getFreeCarryStatus(customerUser.id) : null;
     const freeEligible = !isPaid && !!freeStatus?.eligible;
     const freeReduction = freeEligible ? Number(catalog.price) : 0;
+    const selectedFreeSource = freeEligible ? freeStatus?.source || "weekly" : null;
 
     const finalPrice = Math.max(0, Number((discount.finalTotal - freeReduction).toFixed(2)));
     const totalDiscount = Number((discount.discountTotal + freeReduction).toFixed(2));
@@ -991,8 +993,8 @@ class CarryService {
              ticket_id, guild_id, customer_discord_id, customer_mc_username,
              carry_type, tier, category, amount, status,
              base_unit_price, base_total_price, final_price, discount_total,
-             is_free, is_paid, price_breakdown_json, requested_at, queued_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             is_free, is_paid, price_breakdown_json, requested_at, queued_at, free_carry_source, last_activity_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           ticketId,
@@ -1011,6 +1013,8 @@ class CarryService {
           isPaid ? 1 : 0,
           JSON.stringify({ ...discount, freeReduction }),
           now,
+          now,
+          selectedFreeSource,
           now
         );
 
@@ -1187,6 +1191,88 @@ class CarryService {
     return this.db.getConnection().prepare("SELECT * FROM carries WHERE id = ?").get(Number(carryId));
   }
 
+  touchCarryActivity(carryId, ts = Date.now()) {
+    const id = Number(carryId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    this.db.getConnection().prepare("UPDATE carries SET last_activity_at = ? WHERE id = ?").run(Number(ts || Date.now()), id);
+  }
+
+  touchCarryActivityByChannel(channelId, ts = Date.now()) {
+    if (!channelId) return;
+    const carry = this.db
+      .getConnection()
+      .prepare("SELECT id FROM carries WHERE execution_channel_id = ? ORDER BY id DESC LIMIT 1")
+      .get(String(channelId));
+    if (!carry?.id) return;
+    this.touchCarryActivity(carry.id, ts);
+  }
+
+  async autoCloseInactiveCarries() {
+    const now = Date.now();
+    const inactivityMs = 24 * 60 * 60 * 1000;
+    const rows = this.db
+      .getConnection()
+      .prepare(
+        `SELECT *
+         FROM carries
+         WHERE status IN ('queued', 'claimed', 'in_progress', 'pending_confirm', 'awaiting_rating')
+           AND ? - COALESCE(last_activity_at, requested_at, queued_at, started_at, 0) >= ?`
+      )
+      .all(now, inactivityMs);
+
+    for (const carry of rows) {
+      await this.autoCloseInactiveCarry(carry).catch(() => {});
+    }
+  }
+
+  refundFreeCarryIfUsed(carry) {
+    if (!carry || Number(carry.is_free) !== 1 || !carry.customer_discord_id) return { refunded: false, source: null };
+    const userId = String(carry.customer_discord_id);
+    const source = String(carry.free_carry_source || "").toLowerCase();
+    if (source === "weekly") {
+      const weekKey = this.getWeekKeyUtc(Number(carry.requested_at || Date.now()));
+      const row = this.db.getConnection().prepare("SELECT used_count FROM freecarry_usage WHERE user_id = ? AND week_key = ?").get(userId, weekKey);
+      const used = Number(row?.used_count || 0);
+      if (used > 0) {
+        this.db.getConnection().prepare("UPDATE freecarry_usage SET used_count = MAX(0, used_count - 1) WHERE user_id = ? AND week_key = ?").run(userId, weekKey);
+        return { refunded: true, source: "weekly" };
+      }
+    }
+
+    this.db
+      .getConnection()
+      .prepare(
+        `INSERT INTO freecarry_bonus (user_id, remaining_count, updated_at)
+         VALUES (?, 1, ?)
+         ON CONFLICT(user_id)
+         DO UPDATE SET remaining_count = remaining_count + 1, updated_at = excluded.updated_at`
+      )
+      .run(userId, Date.now());
+    return { refunded: true, source: source || "bonus" };
+  }
+
+  async autoCloseInactiveCarry(carry) {
+    const refund = this.refundFreeCarryIfUsed(carry);
+    const result = await this.cancelCarry(carry.id, "system", { immediateDelete: true, reason: "inactivity_24h" });
+    if (!result?.ok) return result;
+
+    if (carry.ticket_id && this.ticketService) {
+      const refundText = refund.refunded ? ` Free carry refunded (${refund.source}).` : "";
+      await this.ticketService.mirrorMessage(carry.ticket_id, {
+        content: `Carry #${carry.id} auto-closed after 24h without activity.${refundText}`,
+        username: "Carry System",
+        avatarURL: null,
+        viaWebhook: true
+      });
+    }
+    this.db.logEvent("carry.auto_closed_inactive", "carry", carry.id, {
+      inactivityHours: 24,
+      refundedFreeCarry: refund.refunded,
+      refundSource: refund.source
+    });
+    return { ok: true };
+  }
+
   async syncCarryTicketIndicators(carryId) {
     if (!this.ticketService) return;
     const carry = this.getCarryById(carryId);
@@ -1225,6 +1311,7 @@ class CarryService {
     if (!assigned.includes(carrierId)) assigned.push(carrierId);
 
     this.db.getConnection().prepare("UPDATE carries SET status = 'claimed', assigned_carrier_discord_ids = ? WHERE id = ?").run(JSON.stringify(assigned), carry.id);
+    this.touchCarryActivity(carry.id);
     this.db
       .getConnection()
       .prepare("UPDATE queue_entries SET state = 'claimed', claimed_at = ?, claimed_by_discord_id = ?, stale_notified = 0 WHERE carry_id = ?")
@@ -1257,6 +1344,7 @@ class CarryService {
       .getConnection()
       .prepare("UPDATE carries SET status = ?, assigned_carrier_discord_ids = ? WHERE id = ?")
       .run(nextStatus, JSON.stringify(nextAssigned), carry.id);
+    this.touchCarryActivity(carry.id);
     this.db
       .getConnection()
       .prepare("UPDATE queue_entries SET state = ?, claimed_by_discord_id = CASE WHEN ? THEN claimed_by_discord_id ELSE NULL END WHERE carry_id = ?")
@@ -1290,6 +1378,7 @@ class CarryService {
       .getConnection()
       .prepare("UPDATE carries SET status = 'in_progress', started_at = COALESCE(started_at, ?), assigned_carrier_discord_ids = ?, execution_channel_id = ? WHERE id = ?")
       .run(Date.now(), JSON.stringify(assigned), channelId, carry.id);
+    this.touchCarryActivity(carry.id);
 
     this.db.logEvent("carry.started", "carry", carry.id, { carrierId, channelId });
     await this.syncCarryTicketIndicators(carry.id);
@@ -1627,12 +1716,14 @@ class CarryService {
     if (!carry) return { ok: false, reason: "Carry not found." };
 
     const now = Date.now();
+    const actorLabel = /^\d{17,20}$/.test(String(actorId || "")) ? `<@${actorId}>` : String(actorId || "system");
+    const reason = options.reason ? ` (${options.reason})` : "";
     this.db.getConnection().prepare("UPDATE carries SET status = 'cancelled', cancelled_at = ? WHERE id = ?").run(now, carry.id);
     this.db.getConnection().prepare("UPDATE queue_entries SET state = 'cancelled' WHERE carry_id = ?").run(carry.id);
 
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
-        content: `Carry #${carry.id} cancelled by <@${actorId}>.`,
+        content: `Carry #${carry.id} cancelled by ${actorLabel}.${reason}`,
         username: "Carry System",
         avatarURL: null,
         viaWebhook: true
@@ -1735,6 +1826,7 @@ class CarryService {
       .getConnection()
       .prepare("UPDATE carries SET is_paid = CASE WHEN ? > 0 THEN 1 ELSE is_paid END, paid_amount = COALESCE(paid_amount, 0) + ? WHERE id = ?")
       .run(addAmount, addAmount, carry.id);
+    this.touchCarryActivity(carry.id);
     const priority = this.computePriorityScore({ isPaid: true, isFree: Number(carry.is_free) === 1, member: null });
     this.db.getConnection().prepare("UPDATE queue_entries SET priority_score = ? WHERE carry_id = ? AND state IN ('queued','claimed')").run(priority, carry.id);
 
@@ -1870,6 +1962,7 @@ class CarryService {
       return { ok: false, needsCustomerConfirm: true, reason: "Over-target run log requires customer confirmation." };
     }
 
+    this.touchCarryActivity(carry.id);
     return this.applyLoggedRuns(carryId, actorId, addRuns);
   }
 
@@ -1925,6 +2018,7 @@ class CarryService {
     if (Number(carry.logged_runs || 0) < Number(carry.amount || 0)) return { ok: false, reason: "Carry runs are not fully logged yet." };
 
     this.db.getConnection().prepare("UPDATE carries SET customer_confirmed = 1 WHERE id = ?").run(carry.id);
+    this.touchCarryActivity(carry.id);
     this.db.logEvent("carry.customer_confirmed", "carry", carry.id, { userId });
     await this.sendRatingPrompt(carry.id);
     await this.syncCarryTicketIndicators(carry.id);
@@ -1945,9 +2039,11 @@ class CarryService {
     const isZeroProgress = !hasLoggedRuns && !hasAnyPayment;
 
     if (isZeroProgress) {
+      this.touchCarryActivity(carry.id);
       return this.cancelCarry(carryId, actorId, { immediateDelete: true });
     }
 
+    this.touchCarryActivity(carry.id);
     await this.postCloseTicketConfirmation(carry, actorId, { hasLoggedRuns, hasAnyPayment, hasPartialPayment, coverage });
     return { ok: false, needsConfirm: true, reason: "Close requires confirmation. A confirm embed was posted in this channel." };
   }
@@ -1996,6 +2092,7 @@ class CarryService {
 
     await this.ghostPingCarrierRole(carry.id);
     this.db.getConnection().prepare("UPDATE carries SET reping_last_at = ? WHERE id = ?").run(now, carry.id);
+    this.touchCarryActivity(carry.id);
     this.db.logEvent("carry.reping", "carry", carry.id, { actorId });
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {

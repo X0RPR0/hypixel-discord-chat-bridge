@@ -483,16 +483,28 @@ class TicketService {
     }
 
     let ticket = this.getTicketByForumThread(message.channelId);
+    let carryIdForActivity = null;
 
     if (!ticket) {
       const carry = this.db.getConnection().prepare("SELECT id, ticket_id FROM carries WHERE execution_channel_id = ?").get(String(message.channelId));
       if (carry?.ticket_id) {
         ticket = this.getTicketById(carry.ticket_id);
+        carryIdForActivity = Number(carry.id);
       }
+    } else {
+      const carry = this.db
+        .getConnection()
+        .prepare("SELECT id FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
+        .get(Number(ticket.id));
+      if (carry?.id) carryIdForActivity = Number(carry.id);
     }
 
     if (!ticket) {
       return;
+    }
+
+    if (carryIdForActivity) {
+      this.client?.carryService?.touchCarryActivity?.(carryIdForActivity, Number(message.createdTimestamp || Date.now()));
     }
 
     // Avoid recursively mirroring forum thread entries.
