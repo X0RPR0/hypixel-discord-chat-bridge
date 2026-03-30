@@ -104,9 +104,19 @@ class TicketService {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reopen:${ticketId}`).setLabel("Reopen Ticket").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reassign_carrier:${ticketId}`).setLabel("Reassign Carrier(s)").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reassign_customer:${ticketId}`).setLabel("Reassign Customer").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reassign_customer:${ticketId}`).setLabel("Reassign Customer").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}delete_entry:${ticketId}`).setLabel("Delete Entry").setStyle(ButtonStyle.Danger)
       )
     ];
+  }
+
+  sanitizeNamePart(value, fallback) {
+    const clean = String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    return clean || fallback;
   }
 
   async publishDashboard(channelId = null) {
@@ -234,7 +244,9 @@ class TicketService {
       return null;
     }
 
-    const name = `ticket-${ticket.id}-${String(context.type || ticket.type || "support").replace(/[^a-z0-9_-]/gi, "-").slice(0, 36)}`;
+    const typePart = this.sanitizeNamePart(context.type || ticket.type || "support", "support");
+    const customerPart = this.sanitizeNamePart(ticket.customer_username || "customer", "customer");
+    const name = `ticket-${typePart}-${customerPart}`.slice(0, 90);
 
     let starter = null;
     try {
@@ -539,6 +551,13 @@ class TicketService {
         return true;
       }
 
+      if (parsed.action === "delete_entry") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        const result = await this.deleteTicketEntry(parsed.ticketId, interaction.user.id);
+        await interaction.editReply({ content: result.ok ? `Ticket #${parsed.ticketId} fully deleted.` : `Delete failed: ${result.reason}` });
+        return true;
+      }
+
       if (["reassign_carrier", "reassign_customer"].includes(parsed.action)) {
         const modal = new ModalBuilder()
           .setCustomId(`${TICKET_MODAL_PREFIX}${parsed.action}:${parsed.ticketId}`)
@@ -601,6 +620,45 @@ class TicketService {
     this.db.getConnection().prepare("UPDATE tickets SET status = 'closed', closed_at = ? WHERE id = ?").run(Date.now(), Number(ticketId));
     this.db.logEvent("ticket.closed", "ticket", ticketId, {});
     await this.syncCarryThreadIndicators(Number(ticketId)).catch(() => {});
+  }
+
+  async deleteTicketEntry(ticketId, actorId = null) {
+    const ticket = this.getTicketById(ticketId);
+    if (!ticket) return { ok: false, reason: "Ticket not found." };
+
+    const db = this.db.getConnection();
+    const carries = db.prepare("SELECT id, execution_channel_id FROM carries WHERE ticket_id = ?").all(Number(ticketId));
+    const channelsToDelete = carries
+      .map((row) => String(row.execution_channel_id || ""))
+      .filter(Boolean);
+
+    const tx = db.transaction(() => {
+      const carryIds = carries.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+      if (carryIds.length > 0) {
+        const placeholders = carryIds.map(() => "?").join(",");
+        db.prepare(`DELETE FROM queue_entries WHERE carry_id IN (${placeholders})`).run(...carryIds);
+        db.prepare(`DELETE FROM customer_ratings WHERE carry_id IN (${placeholders})`).run(...carryIds);
+        db.prepare(`DELETE FROM carries WHERE id IN (${placeholders})`).run(...carryIds);
+      }
+      db.prepare("DELETE FROM ticket_messages WHERE ticket_id = ?").run(Number(ticketId));
+      db.prepare("DELETE FROM tickets WHERE id = ?").run(Number(ticketId));
+    });
+    tx();
+
+    for (const channelId of channelsToDelete) {
+      const channel = await this.client?.channels?.fetch(channelId).catch(() => null);
+      if (channel?.deletable) {
+        await channel.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch(() => {});
+      }
+    }
+
+    const thread = ticket.forum_thread_id ? await this.client?.channels?.fetch(ticket.forum_thread_id).catch(() => null) : null;
+    if (thread?.deletable) {
+      await thread.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch(() => {});
+    }
+
+    this.db.logEvent("ticket.deleted_entry", "ticket", ticketId, { actorId });
+    return { ok: true };
   }
 
   async createCarryLinkedTicket({ guildId, customer, carryType, tier, amount }) {

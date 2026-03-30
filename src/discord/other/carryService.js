@@ -134,57 +134,61 @@ class CarryService {
   seedDefaultCatalog() {
     const db = this.db.getConnection();
     const defaults = [
-      ["dungeons", "f1", "dungeons"],
-      ["dungeons", "f2", "dungeons"],
-      ["dungeons", "f3", "dungeons"],
-      ["dungeons", "f4", "dungeons"],
-      ["dungeons", "f5", "dungeons"],
-      ["dungeons", "f6", "dungeons"],
-      ["dungeons", "f7", "dungeons"],
-      ["dungeons", "m1", "dungeons"],
-      ["dungeons", "m2", "dungeons"],
-      ["dungeons", "m3", "dungeons"],
-      ["dungeons", "m4", "dungeons"],
-      ["dungeons", "m5", "dungeons"],
-      ["dungeons", "m6", "dungeons"],
-      ["dungeons", "m7", "dungeons"],
-      ["slayer_zombie", "1", "slayers"],
-      ["slayer_zombie", "2", "slayers"],
-      ["slayer_zombie", "3", "slayers"],
-      ["slayer_zombie", "4", "slayers"],
-      ["slayer_zombie", "5", "slayers"],
-      ["slayer_tara", "1", "slayers"],
-      ["slayer_tara", "2", "slayers"],
-      ["slayer_tara", "3", "slayers"],
-      ["slayer_tara", "4", "slayers"],
-      ["slayer_tara", "5", "slayers"],
-      ["slayer_sven", "1", "slayers"],
-      ["slayer_sven", "2", "slayers"],
-      ["slayer_sven", "3", "slayers"],
-      ["slayer_sven", "4", "slayers"],
-      ["slayer_eman", "1", "slayers"],
-      ["slayer_eman", "2", "slayers"],
-      ["slayer_eman", "3", "slayers"],
-      ["slayer_eman", "4", "slayers"],
-      ["slayer_blaze", "1", "slayers"],
-      ["slayer_blaze", "2", "slayers"],
-      ["slayer_blaze", "3", "slayers"],
-      ["slayer_blaze", "4", "slayers"],
-      ["slayer_blaze", "5", "slayers"],
-      ["kuudra", "basic", "kuudra"],
-      ["kuudra", "hot", "kuudra"],
-      ["kuudra", "burning", "kuudra"],
-      ["kuudra", "fiery", "kuudra"],
-      ["kuudra", "infernal", "kuudra"]
+      ["dungeons", "f1", "dungeons", 200000],
+      ["dungeons", "f2", "dungeons", 200000],
+      ["dungeons", "f3", "dungeons", 200000],
+      ["dungeons", "f4", "dungeons", 700000],
+      ["dungeons", "f5", "dungeons", 600000],
+      ["dungeons", "f6", "dungeons", 800000],
+      ["dungeons", "f7", "dungeons", 8000000],
+      ["dungeons", "m1", "dungeons", 1000000],
+      ["dungeons", "m2", "dungeons", 1500000],
+      ["dungeons", "m3", "dungeons", 2000000],
+      ["dungeons", "m4", "dungeons", 10000000],
+      ["dungeons", "m5", "dungeons", 5000000],
+      ["dungeons", "m6", "dungeons", 6000000],
+      ["dungeons", "m7", "dungeons", 30000000],
+      ["slayer_zombie", "1", "slayers", 200000],
+      ["slayer_zombie", "2", "slayers", 200000],
+      ["slayer_zombie", "3", "slayers", 200000],
+      ["slayer_zombie", "4", "slayers", 200000],
+      ["slayer_zombie", "5", "slayers", 800000],
+      ["slayer_tara", "1", "slayers", 0],
+      ["slayer_tara", "2", "slayers", 0],
+      ["slayer_tara", "3", "slayers", 0],
+      ["slayer_tara", "4", "slayers", 0],
+      ["slayer_tara", "5", "slayers", 0],
+      ["slayer_sven", "1", "slayers", 200000],
+      ["slayer_sven", "2", "slayers", 200000],
+      ["slayer_sven", "3", "slayers", 200000],
+      ["slayer_sven", "4", "slayers", 500000],
+      ["slayer_eman", "1", "slayers", 200000],
+      ["slayer_eman", "2", "slayers", 200000],
+      ["slayer_eman", "3", "slayers", 500000],
+      ["slayer_eman", "4", "slayers", 1500000],
+      ["slayer_blaze", "1", "slayers", 500000],
+      ["slayer_blaze", "2", "slayers", 1000000],
+      ["slayer_blaze", "3", "slayers", 2000000],
+      ["slayer_blaze", "4", "slayers", 4000000],
+      ["slayer_blaze", "5", "slayers", 0],
+      ["kuudra", "basic", "kuudra", 6000000],
+      ["kuudra", "hot", "kuudra", 10000000],
+      ["kuudra", "burning", "kuudra", 15000000],
+      ["kuudra", "fiery", "kuudra", 20000000],
+      ["kuudra", "infernal", "kuudra", 45000000]
     ];
 
     const insert = db.prepare(
       "INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING"
     );
+    const updateIfUnset = db.prepare("UPDATE carry_catalog SET price = ? WHERE lower(carry_type)=lower(?) AND lower(tier)=lower(?) AND (price IS NULL OR price <= 0)");
 
     const tx = db.transaction(() => {
       for (const row of defaults) {
         insert.run(row[0], row[1], row[2]);
+        if (Number(row[3] || 0) > 0) {
+          updateIfUnset.run(Number(row[3]), row[0], row[1]);
+        }
       }
     });
     tx();
@@ -303,6 +307,15 @@ class CarryService {
 
   getFreeCarryLimit() {
     return Number(this.db.getBinding("free_carry_limit", 1));
+  }
+
+  sanitizeNamePart(value, fallback) {
+    const clean = String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    return clean || fallback;
   }
 
   getFreeCarryBonus(userId) {
@@ -1101,7 +1114,9 @@ class CarryService {
       });
     }
 
-    const name = `carry-${carry.id}-${String(carry.carry_type).replace(/[^a-z0-9-]/gi, "-").slice(0, 30)}`;
+    const typePart = this.sanitizeNamePart(carry.carry_type, "carry");
+    const customerPart = this.sanitizeNamePart(carry.customer_username || "customer", "customer");
+    const name = `carry-${typePart}-${customerPart}`.slice(0, 90);
 
     const staffRoleIds = this.getStaffRoleIds();
     const overwrites = [
