@@ -1251,11 +1251,12 @@ class CarryService {
       });
     }
 
+    const resolvedCustomerName = await this.resolveCarryCustomerName(guild, carry);
     const typeLabel = `${carry.carry_type || "carry"} ${carry.tier || ""}`.trim();
     const displayName = this.buildCarryDisplayName({
       type: typeLabel,
       amount: carry.amount || "-",
-      name: carry.customer_username || "customer"
+      name: resolvedCustomerName
     });
     const name = displayName;
 
@@ -1329,6 +1330,25 @@ class CarryService {
     this.db.getConnection().prepare("UPDATE carries SET execution_message_id = ? WHERE id = ?").run(panelMessage.id, carry.id);
 
     return { ok: true, channel };
+  }
+
+  async resolveCarryCustomerName(guild, carry) {
+    if (carry?.customer_discord_id) {
+      const member = guild ? await guild.members.fetch(String(carry.customer_discord_id)).catch(() => null) : null;
+      if (member?.user?.username) return String(member.user.username);
+      const user = this.client ? await this.client.users.fetch(String(carry.customer_discord_id)).catch(() => null) : null;
+      if (user?.username) return String(user.username);
+    }
+
+    if (carry?.ticket_id) {
+      const ticket = this.db.getConnection().prepare("SELECT customer_username FROM tickets WHERE id = ?").get(Number(carry.ticket_id));
+      const username = String(ticket?.customer_username || "")
+        .trim()
+        .replace(/#\d{4,}$/g, "");
+      if (username) return username;
+    }
+
+    return "customer";
   }
 
   buildExecutionEmbed(carry) {
