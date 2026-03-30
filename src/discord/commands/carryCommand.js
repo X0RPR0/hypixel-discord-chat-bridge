@@ -141,7 +141,8 @@ module.exports = {
               { name: "/carry status [id]", value: "Show your latest carry or a specific one." },
               { name: "/carry free", value: "Check weekly/bonus free carry availability." },
               { name: "/carry mycarries", value: "List your recent carries." },
-              { name: "/carry help", value: "Show this help message." }
+              { name: "/carry help", value: "Show this help message." },
+              { name: "In-Game: !carry request <type> <amount>", value: "Create a carry request from Minecraft (linked Discord required)." }
             )
         ]
       });
