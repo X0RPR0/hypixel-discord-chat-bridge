@@ -322,7 +322,7 @@ class CarryService {
     const typePart = String(type || "carry").trim();
     const amountPart = String(amount || "-").trim();
     const namePart = String(name || "customer").trim();
-    return `├:tickets: 》${typePart} ${amountPart} ${namePart}`.slice(0, 100);
+    return `├:tickets: 》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
   }
 
   sanitizeTextChannelName(name, fallback = "carry-ticket") {

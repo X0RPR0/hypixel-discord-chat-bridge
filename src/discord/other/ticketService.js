@@ -123,7 +123,7 @@ class TicketService {
     const typePart = String(type || "carry").trim();
     const amountPart = String(amount || "-").trim();
     const namePart = String(name || "customer").trim();
-    return `├:tickets: 》${typePart} ${amountPart} ${namePart}`.slice(0, 100);
+    return `├:tickets: 》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
   }
 
   async publishDashboard(channelId = null) {
@@ -254,7 +254,7 @@ class TicketService {
     const name = this.buildTicketDisplayName({
       type: context.type || ticket.type || "support",
       amount: context.amount || "-",
-      name: ticket.customer_username || "customer"
+      name: context.customer?.username || context.customer?.tag || ticket.customer_username || "customer"
     });
 
     let starter = null;
