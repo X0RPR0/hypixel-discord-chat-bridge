@@ -20,7 +20,8 @@ module.exports = {
         .addIntegerOption((o) => o.setName("id").setDescription("Carry ID").setRequired(false).setMinValue(1))
     )
     .addSubcommand((s) => s.setName("free").setDescription("Check free carry balance"))
-    .addSubcommand((s) => s.setName("mycarries").setDescription("Show your recent carry requests")),
+    .addSubcommand((s) => s.setName("mycarries").setDescription("Show your recent carry requests"))
+    .addSubcommand((s) => s.setName("help").setDescription("Show carry user commands")),
 
   execute: async (interaction) => {
     const service = interaction.client.carryService;
@@ -123,6 +124,24 @@ module.exports = {
             .setTitle("My Carries")
             .setDescription(
               rows.map((r) => `#${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`).join("\n")
+            )
+        ]
+      });
+    }
+
+    if (sub === "help") {
+      return interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle("Carry Commands")
+            .setDescription("User-facing carry commands:")
+            .addFields(
+              { name: "/carry request <type> <tier> <amount>", value: "Create a carry request and join the queue." },
+              { name: "/carry status [id]", value: "Show your latest carry or a specific one." },
+              { name: "/carry free", value: "Check weekly/bonus free carry availability." },
+              { name: "/carry mycarries", value: "List your recent carries." },
+              { name: "/carry help", value: "Show this help message." }
             )
         ]
       });

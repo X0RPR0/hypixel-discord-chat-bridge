@@ -212,7 +212,8 @@ module.exports = {
             .addIntegerOption((o) => o.setName("limit").setDescription("Max entries to process (default 100)").setMinValue(1).setMaxValue(1000))
             .addBooleanOption((o) => o.setName("dry_run").setDescription("Only show what would be deleted"))
         )
-    ),
+    )
+    .addSubcommand((s) => s.setName("help").setDescription("Show carry admin command groups")),
   moderatorOnly: true,
 
   execute: async (interaction) => {
@@ -222,9 +223,27 @@ module.exports = {
       return interaction.editReply({ embeds: [new ErrorEmbed("Carry/Ticket services are not initialized.")] });
     }
 
-    const group = interaction.options.getSubcommandGroup(true);
+    const group = interaction.options.getSubcommandGroup(false);
     const sub = interaction.options.getSubcommand(true);
     const now = Date.now();
+
+    if (!group && sub === "help") {
+      return interaction.editReply({
+        embeds: [
+          new SuccessEmbed(
+            [
+              "**/carryadmin help**",
+              "`setup` - dashboards, logs forum, category, autodelete, transcript, carrier role",
+              "`catalog` - add/remove carries, set tier price, enable/disable",
+              "`queue` - enable/disable/reset/repair, role priority",
+              "`discount` - static/timed/bulk/stacking controls",
+              "`freecarry` - reset-weekly, set-limit, grant",
+              "`ticket` - mark-paid, log-runs, delete-old"
+            ].join("\n")
+          )
+        ]
+      });
+    }
 
     if (group === "setup") {
       if (sub === "carry-dashboard") {

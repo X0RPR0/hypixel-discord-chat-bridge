@@ -346,6 +346,49 @@ class CarryService {
     return String(Math.round(n));
   }
 
+  parseCoinsInput(value) {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : NaN;
+    }
+
+    const raw = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/,/g, ".");
+    if (!raw) return NaN;
+    const match = raw.match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);
+    if (!match) return NaN;
+
+    const base = Number(match[1]);
+    if (!Number.isFinite(base)) return NaN;
+    const suffix = match[2] || "";
+    const mult = suffix === "k" ? 1_000 : suffix === "m" ? 1_000_000 : suffix === "b" ? 1_000_000_000 : 1;
+    return base * mult;
+  }
+
+  parseCoinsInput(value) {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : NaN;
+    }
+
+    const raw = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/,/g, ".");
+    if (!raw) return NaN;
+
+    const match = raw.match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);
+    if (!match) return NaN;
+
+    const base = Number(match[1]);
+    if (!Number.isFinite(base)) return NaN;
+    const suffix = match[2] || "";
+    const mult = suffix === "k" ? 1_000 : suffix === "m" ? 1_000_000 : suffix === "b" ? 1_000_000_000 : 1;
+    return base * mult;
+  }
+
   getFreeCarryBonus(userId) {
     if (!userId) return 0;
     const row = this.db.getConnection().prepare("SELECT remaining_count FROM freecarry_bonus WHERE user_id = ?").get(String(userId));
@@ -1224,6 +1267,7 @@ class CarryService {
 
   buildExecutionEmbed(carry) {
     const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
+    const coverage = this.getPaymentCoverage(carry);
     const scopePct = Number(breakdown?.scopeDiscount?.percentage || 0);
     const bulkPct = Number(breakdown?.bulkDiscount?.percentage || 0);
     const freeReduction = Number(breakdown?.freeReduction || 0);
@@ -1239,6 +1283,7 @@ class CarryService {
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
         { name: "Paid Amount", value: `${this.formatCoinsShort(carry.paid_amount || 0)}`, inline: true },
+        { name: "Remaining", value: `${this.formatCoinsShort(coverage.remainingPayment || 0)}`, inline: true },
         { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
         { name: "Base", value: `${this.formatCoinsShort(breakdown?.baseTotal ?? carry.base_total_price ?? 0)}`, inline: true },
         { name: "Scope Discount", value: scopeLabel, inline: true },
@@ -1499,7 +1544,10 @@ class CarryService {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
 
-    const addAmount = Number(amount || 0);
+    const addAmount = this.parseCoinsInput(amount);
+    if (!Number.isFinite(addAmount) || addAmount <= 0) {
+      return { ok: false, reason: "Invalid payment amount. Use positive values like 300000, 300k, or 1.5m." };
+    }
     this.db
       .getConnection()
       .prepare("UPDATE carries SET is_paid = CASE WHEN ? > 0 THEN 1 ELSE is_paid END, paid_amount = COALESCE(paid_amount, 0) + ? WHERE id = ?")
@@ -1512,7 +1560,7 @@ class CarryService {
     this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId, amount: addAmount, coverage });
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
-        content: `Payment logged on carry #${carry.id}: +${addAmount}. Total paid: ${coverage.paidAmount}. Covers ${coverage.coveredRuns}/${coverage.amount} runs. Remaining payment: ${coverage.remainingPayment}.`,
+        content: `Payment logged on carry #${carry.id}: +${this.formatCoinsShort(addAmount)}. Total paid: ${this.formatCoinsShort(coverage.paidAmount)}. Covers ${coverage.coveredRuns}/${coverage.amount} runs. Remaining payment: ${this.formatCoinsShort(coverage.remainingPayment)}.`,
         username: "Carry System",
         avatarURL: null,
         viaWebhook: true
@@ -1700,11 +1748,45 @@ class CarryService {
     const isCustomer = String(carry.customer_discord_id) === String(actorId);
     if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can close this ticket." };
 
-    if (Number(carry.logged_runs || 0) <= 0) {
+    const coverage = this.getPaymentCoverage(carry);
+    const hasLoggedRuns = Number(carry.logged_runs || 0) > 0;
+    const hasAnyPayment = Number(carry.paid_amount || 0) > 0;
+    const hasPartialPayment = hasAnyPayment && Number(coverage.remainingPayment || 0) > 0;
+    const isZeroProgress = !hasLoggedRuns && !hasAnyPayment;
+
+    if (isZeroProgress) {
       return this.cancelCarry(carryId, actorId, { immediateDelete: true });
     }
 
-    return { ok: false, reason: "Runs are already logged. Confirm completion and submit rating to close." };
+    await this.postCloseTicketConfirmation(carry, actorId, { hasLoggedRuns, hasAnyPayment, hasPartialPayment, coverage });
+    return { ok: false, needsConfirm: true, reason: "Close requires confirmation. A confirm embed was posted in this channel." };
+  }
+
+  async postCloseTicketConfirmation(carry, actorId, status) {
+    if (!carry?.execution_channel_id || !this.client) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+
+    const reasons = [];
+    if (status.hasLoggedRuns) reasons.push(`Logged runs: **${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}**`);
+    if (status.hasAnyPayment) reasons.push(`Paid: **${this.formatCoinsShort(carry.paid_amount || 0)}**`);
+    if (status.hasPartialPayment) reasons.push(`Remaining payment: **${this.formatCoinsShort(status.coverage?.remainingPayment || 0)}**`);
+
+    await channel.send({
+      content: `<@${actorId}>`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xe67e22)
+          .setTitle(`Confirm Close • Carry #${carry.id}`)
+          .setDescription(`This ticket has progress/payment data.\n${reasons.join("\n")}\n\nConfirm to force-close and cancel.`)
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_confirm:${carry.id}:${actorId}`).setLabel("Confirm Close").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_cancel:${carry.id}:${actorId}`).setLabel("Keep Open").setStyle(ButtonStyle.Secondary)
+        )
+      ]
+    });
   }
 
   async repingCarriers(carryId, actorId, isStaffActor = false) {
@@ -1856,6 +1938,37 @@ class CarryService {
         return true;
       }
       await interaction.reply({ content: `Run log canceled for carry #${carryId}.`, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "close_confirm") {
+      const [carryIdRaw, actorId] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      if (!Number.isInteger(carryId) || !actorId) {
+        await interaction.reply({ content: "Invalid close confirmation payload.", ephemeral: true });
+        return true;
+      }
+      if (String(interaction.user.id) !== String(actorId) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only the requesting user or staff can confirm close.", ephemeral: true });
+        return true;
+      }
+      const result = await this.cancelCarry(carryId, interaction.user.id, { immediateDelete: true });
+      await interaction.reply({ content: result.ok ? `Carry #${carryId} force-closed.` : result.reason, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "close_cancel") {
+      const [carryIdRaw, actorId] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      if (!Number.isInteger(carryId) || !actorId) {
+        await interaction.reply({ content: "Invalid close cancellation payload.", ephemeral: true });
+        return true;
+      }
+      if (String(interaction.user.id) !== String(actorId) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only the requesting user or staff can cancel this close.", ephemeral: true });
+        return true;
+      }
+      await interaction.reply({ content: `Close canceled for carry #${carryId}.`, ephemeral: true });
       return true;
     }
 
@@ -2030,10 +2143,17 @@ class CarryService {
     const action = interaction.customId.slice(CARRY_MODAL_PREFIX.length);
     if (action.startsWith("mark_paid:")) {
       const carryId = Number(action.split(":")[1]);
-      const amount = Number(interaction.fields.getTextInputValue("paid_amount"));
+      const amountRaw = interaction.fields.getTextInputValue("paid_amount");
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
-      const result = await this.markPaid(carryId, interaction.user.id, amount);
-      await interaction.editReply({ content: result.ok ? `Logged payment for carry #${carryId}.` : result.reason });
+      const result = await this.markPaid(carryId, interaction.user.id, amountRaw);
+      if (!result.ok) {
+        await interaction.editReply({ content: result.reason });
+        return true;
+      }
+      const c = result.coverage;
+      await interaction.editReply({
+        content: `Logged payment for carry #${carryId}. Paid: ${this.formatCoinsShort(c.paidAmount)} | Covers: ${c.coveredRuns}/${c.amount} | Remaining: ${this.formatCoinsShort(c.remainingPayment)}`
+      });
       return true;
     }
 
