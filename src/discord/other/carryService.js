@@ -1341,7 +1341,7 @@ class CarryService {
       .run(completed, totalDuration, nextRate, JSON.stringify([...hours]), now, carrierId);
   }
 
-  async cancelCarry(carryId, actorId) {
+  async cancelCarry(carryId, actorId, options = {}) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
 
@@ -1359,14 +1359,14 @@ class CarryService {
       await this.ticketService.closeTicket(carry.ticket_id);
     }
 
-    await this.closeExecutionChannel(carry.execution_channel_id);
+    await this.closeExecutionChannel(carry.execution_channel_id, { immediate: Boolean(options.immediateDelete) });
     this.db.logEvent("carry.cancelled", "carry", carry.id, { actorId });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     return { ok: true };
   }
 
-  async closeExecutionChannel(channelId) {
+  async closeExecutionChannel(channelId, options = {}) {
     if (!channelId || !this.client) return;
     const channel = await this.client.channels.fetch(channelId).catch(() => null);
     if (!channel || channel.type !== ChannelType.GuildText) return;
@@ -1377,10 +1377,10 @@ class CarryService {
       })
       .catch(() => {});
 
-    const delayMs = this.getCarryAutoDeleteMs();
+    const delayMs = options.immediate ? 1000 : Math.max(10000, this.getCarryAutoDeleteMs());
     setTimeout(() => {
       channel.delete("Carry closed").catch(() => {});
-    }, Math.max(10000, delayMs));
+    }, delayMs);
   }
 
   async buildChannelTranscript(channelId) {
@@ -1640,7 +1640,7 @@ class CarryService {
     if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can close this ticket." };
 
     if (Number(carry.logged_runs || 0) <= 0) {
-      return this.cancelCarry(carryId, actorId);
+      return this.cancelCarry(carryId, actorId, { immediateDelete: true });
     }
 
     return { ok: false, reason: "Runs are already logged. Confirm completion and submit rating to close." };
