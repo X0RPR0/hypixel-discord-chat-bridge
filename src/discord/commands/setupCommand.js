@@ -76,6 +76,7 @@ module.exports = {
     if (!carryService || !ticketService) {
       return interaction.editReply({ embeds: [new ErrorEmbed("Carry/Ticket services are not initialized.")] });
     }
+    await interaction.followUp({ content: "Deprecated: use `/carryadmin setup ...`.", ephemeral: true }).catch(() => {});
 
     const sub = interaction.options.getSubcommand();
     if (sub === "carry-dashboard") {

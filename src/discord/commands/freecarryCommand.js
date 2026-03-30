@@ -26,6 +26,7 @@ module.exports = {
     if (!service) {
       return interaction.editReply({ embeds: [new ErrorEmbed("Carry service unavailable.")] });
     }
+    await interaction.followUp({ content: "Deprecated: use `/carryadmin freecarry ...`.", ephemeral: true }).catch(() => {});
 
     const sub = interaction.options.getSubcommand();
     if (sub === "reset-weekly") {

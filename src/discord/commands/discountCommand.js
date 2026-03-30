@@ -68,6 +68,7 @@ module.exports = {
     if (!service) {
       return interaction.editReply({ embeds: [new ErrorEmbed("Carry service unavailable.")] });
     }
+    await interaction.followUp({ content: "Deprecated: use `/carryadmin discount ...`.", ephemeral: true }).catch(() => {});
 
     const sub = interaction.options.getSubcommand();
     const now = Date.now();
