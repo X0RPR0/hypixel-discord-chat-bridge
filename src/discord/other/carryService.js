@@ -1818,11 +1818,12 @@ class CarryService {
     }
 
     if (["claim", "unclaim", "close_ticket", "reping"].includes(parsed.action) && parsed.carryId !== null) {
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
       if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
         if (parsed.action === "close_ticket" || parsed.action === "reping") {
           // customer/staff path handled below
         } else {
-          await interaction.reply({ content: "Only carriers/staff can perform this action.", ephemeral: true });
+          await interaction.editReply({ content: "Only carriers/staff can perform this action." });
           return true;
         }
       }
@@ -1834,7 +1835,7 @@ class CarryService {
       if (parsed.action === "reping") result = await this.repingCarriers(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
 
       const doneText = parsed.action === "reping" ? `Reping sent for carry #${parsed.carryId}.` : `Action \`${parsed.action}\` applied on carry #${parsed.carryId}.`;
-      await interaction.reply({ content: result?.ok ? doneText : result?.reason || "Action failed.", ephemeral: true });
+      await interaction.editReply({ content: result?.ok ? doneText : result?.reason || "Action failed." });
       return true;
     }
 
