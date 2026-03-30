@@ -7,6 +7,10 @@ function parseDuration(input) {
   return parsed && parsed > 0 ? parsed : null;
 }
 
+function isBlazeT5(type, tier) {
+  return String(type || "").toLowerCase() === "slayer_blaze" && ["5", "t5"].includes(String(tier || "").toLowerCase());
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("carryadmin")
@@ -256,7 +260,7 @@ module.exports = {
       if (focused.name === "tier" && typeSelected) {
         const rows = carryService.db
           .getConnection()
-          .prepare("SELECT DISTINCT lower(tier) AS tier FROM carry_catalog WHERE lower(carry_type)=lower(?) ORDER BY tier ASC")
+          .prepare("SELECT DISTINCT lower(tier) AS tier FROM carry_catalog WHERE lower(carry_type)=lower(?) AND lower(tier) NOT IN ('5','t5') ORDER BY tier ASC")
           .all(typeSelected);
         const choices = rows
           .map((r) => String(r.tier || ""))
@@ -381,6 +385,9 @@ module.exports = {
       if (sub === "add") {
         const name = interaction.options.getString("name", true);
         const tiers = interaction.options.getString("tiers", true);
+        if (String(name).toLowerCase() === "slayer_blaze" && String(tiers).toLowerCase().split(",").map((x) => x.trim()).some((x) => ["5", "t5"].includes(x))) {
+          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 is not available and cannot be added.")] });
+        }
         const count = carryService.addCarryTypeWithTiers(name, tiers);
         await carryService.publishCarryDashboard().catch(() => {});
         return interaction.editReply({ embeds: [new SuccessEmbed(`Added/updated ${count} tier(s) for **${name}**.`)] });
@@ -396,6 +403,9 @@ module.exports = {
       if (sub === "price") {
         const type = interaction.options.getString("type", true);
         const tier = interaction.options.getString("tier", true);
+        if (isBlazeT5(type, tier)) {
+          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 is not available and cannot be priced.")] });
+        }
         const priceRaw = interaction.options.getString("price", true);
         const price = typeof carryService.parseCoinsInput === "function" ? carryService.parseCoinsInput(priceRaw) : Number(priceRaw);
         if (!Number.isFinite(price) || price < 0) {
@@ -411,6 +421,9 @@ module.exports = {
       if (sub === "enable") {
         const type = interaction.options.getString("type", true);
         const changes = carryService.setCarryEnabled(type, true);
+        if (!changes && String(type).toLowerCase() === "slayer_blaze") {
+          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 remains blocked. Only tiers 1-4 can be enabled.")] });
+        }
         await carryService.publishCarryDashboard().catch(() => {});
         return interaction.editReply({ embeds: [new SuccessEmbed(`Enabled ${changes} entries for **${type}**.`)] });
       }

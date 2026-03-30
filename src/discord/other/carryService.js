@@ -20,6 +20,15 @@ const config = require("../../../config.json");
 
 const CARRY_PREFIX = "carry:";
 const CARRY_MODAL_PREFIX = "carrymodal:";
+const SCORE_WEIGHTS = Object.freeze({
+  dungeons: { f1: 1, f2: 2, f3: 3, f4: 5, f5: 7, f6: 10, f7: 15, m1: 18, m2: 22, m3: 26, m4: 32, m5: 40, m6: 55, m7: 75 },
+  kuudra: { basic: 15, hot: 22, burning: 35, fiery: 50, infernal: 75 },
+  slayer_zombie: { "1": 1, "2": 2, "3": 3, "4": 5, "5": 7, t1: 1, t2: 2, t3: 3, t4: 5, t5: 7 },
+  slayer_tara: { "1": 1, "2": 2, "3": 4, "4": 6, "5": 10, t1: 1, t2: 2, t3: 4, t4: 6, t5: 10 },
+  slayer_sven: { "1": 1, "2": 2, "3": 4, "4": 6, t1: 1, t2: 2, t3: 4, t4: 6 },
+  slayer_eman: { "1": 2, "2": 4, "3": 7, "4": 12, t1: 2, t2: 4, t3: 7, t4: 12 },
+  slayer_blaze: { "1": 3, "2": 6, "3": 10, "4": 20, t1: 3, t2: 6, t3: 10, t4: 20 }
+});
 
 class CarryService {
   constructor(db, ticketService) {
@@ -170,7 +179,6 @@ class CarryService {
       ["slayer_blaze", "2", "slayers", 1000000],
       ["slayer_blaze", "3", "slayers", 2000000],
       ["slayer_blaze", "4", "slayers", 4000000],
-      ["slayer_blaze", "5", "slayers", 0],
       ["kuudra", "basic", "kuudra", 6000000],
       ["kuudra", "hot", "kuudra", 10000000],
       ["kuudra", "burning", "kuudra", 15000000],
@@ -192,6 +200,8 @@ class CarryService {
       }
     });
     tx();
+    // Hard-disable legacy blaze tier 5 if it exists from older data.
+    db.prepare("UPDATE carry_catalog SET enabled = 0 WHERE lower(carry_type)=lower('slayer_blaze') AND lower(tier) IN ('5','t5')").run();
   }
 
   getCarrierRoleIds() {
@@ -524,6 +534,20 @@ class CarryService {
       .get(String(type), String(tier));
   }
 
+  isDisallowedCarryTier(type, tier) {
+    const normalizedType = String(type || "").toLowerCase();
+    const normalizedTier = String(tier || "").toLowerCase();
+    return normalizedType === "slayer_blaze" && (normalizedTier === "5" || normalizedTier === "t5");
+  }
+
+  getScoreWeight(carryType, tier) {
+    const normalizedType = String(carryType || "").toLowerCase();
+    const normalizedTier = String(tier || "").toLowerCase();
+    const byType = SCORE_WEIGHTS[normalizedType];
+    if (!byType) return 1;
+    return Number(byType[normalizedTier] || 1);
+  }
+
   addCarryTypeWithTiers(name, tiersText) {
     const tiers = String(tiersText)
       .split(",")
@@ -533,9 +557,12 @@ class CarryService {
     const stmt = db.prepare(
       "INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING"
     );
+    const normalizedName = String(name || "").toLowerCase();
     const tx = db.transaction(() => {
       for (const tier of tiers) {
-        stmt.run(name.toLowerCase(), tier.toLowerCase(), this.inferCategory(name));
+        const normalizedTier = String(tier || "").toLowerCase();
+        if (this.isDisallowedCarryTier(normalizedName, normalizedTier)) continue;
+        stmt.run(normalizedName, normalizedTier, this.inferCategory(name));
       }
     });
     tx();
@@ -556,6 +583,7 @@ class CarryService {
   }
 
   setCarryPrice(type, tier, price) {
+    if (this.isDisallowedCarryTier(type, tier)) return 0;
     return this.db
       .getConnection()
       .prepare("UPDATE carry_catalog SET price = ? WHERE lower(carry_type) = lower(?) AND lower(tier) = lower(?)")
@@ -563,7 +591,14 @@ class CarryService {
   }
 
   setCarryEnabled(type, enabled) {
-    return this.db.getConnection().prepare("UPDATE carry_catalog SET enabled = ? WHERE lower(carry_type) = lower(?)").run(enabled ? 1 : 0, type).changes;
+    if (!enabled) {
+      return this.db.getConnection().prepare("UPDATE carry_catalog SET enabled = 0 WHERE lower(carry_type) = lower(?)").run(type).changes;
+    }
+
+    return this.db
+      .getConnection()
+      .prepare("UPDATE carry_catalog SET enabled = 1 WHERE lower(carry_type) = lower(?) AND lower(tier) NOT IN ('5','t5')")
+      .run(type).changes;
   }
 
   getQueueRows() {
@@ -582,7 +617,9 @@ class CarryService {
   getEnabledCatalog() {
     return this.db
       .getConnection()
-      .prepare("SELECT carry_type, tier, category, price FROM carry_catalog WHERE enabled = 1 ORDER BY category ASC, carry_type ASC, tier ASC")
+      .prepare(
+        "SELECT carry_type, tier, category, price FROM carry_catalog WHERE enabled = 1 AND NOT (lower(carry_type)=lower('slayer_blaze') AND lower(tier) IN ('5','t5')) ORDER BY category ASC, carry_type ASC, tier ASC"
+      )
       .all();
   }
 
@@ -749,13 +786,16 @@ class CarryService {
       .prepare(
         `SELECT cs.user_id,
                 cs.completed_count,
+                cs.completed_tickets_count,
+                cs.actual_carries_count,
+                cs.score_total,
                 cs.total_duration_ms,
                 cs.acceptance_rate,
                 COALESCE((SELECT ROUND(AVG(r.rating), 2) FROM customer_ratings r
                          JOIN carries c ON c.id = r.carry_id
                          WHERE c.assigned_carrier_discord_ids LIKE '%' || cs.user_id || '%'), 0) AS avg_rating
          FROM carrier_stats cs
-         ORDER BY cs.completed_count DESC, cs.updated_at DESC
+         ORDER BY cs.score_total DESC, cs.completed_tickets_count DESC, cs.updated_at DESC
          LIMIT 15`
       )
       .all();
@@ -768,7 +808,10 @@ class CarryService {
               const avgMinutes = row.completed_count > 0 ? Math.round(Number(row.total_duration_ms || 0) / Number(row.completed_count) / 60000) : 0;
               const acceptance = Math.round(Number(row.acceptance_rate || 0) * 100);
               const rating = Number(row.avg_rating || 0);
-              return `${i + 1}. <@${row.user_id}> | done: **${row.completed_count}** | avg: **${avgMinutes}m** | accept: **${acceptance}%** | rating: **${rating || "-"}**`;
+              const tickets = Number(row.completed_tickets_count || row.completed_count || 0);
+              const actualCarrys = Number(row.actual_carries_count || 0);
+              const score = Number(row.score_total || 0);
+              return `${i + 1}. <@${row.user_id}> | tickets: **${tickets}** | carrys: **${actualCarrys}** | score: **${Math.round(score)}** | avg: **${avgMinutes}m** | accept: **${acceptance}%** | rating: **${rating || "-"}**`;
             })
             .join("\n");
 
@@ -824,6 +867,9 @@ class CarryService {
     if (!normalizedType || !normalizedTier || !Number.isInteger(qty) || qty <= 0) {
       return { ok: false, reason: "Invalid carry request payload." };
     }
+    if (this.isDisallowedCarryTier(normalizedType, normalizedTier)) {
+      return { ok: false, reason: "Blaze tier 5 is currently not available." };
+    }
 
     const catalog = this.getCatalogItem(normalizedType, normalizedTier);
     if (!catalog || Number(catalog.enabled) !== 1) {
@@ -849,7 +895,7 @@ class CarryService {
     const tx = this.db.getConnection().transaction(() => {
       let ticketId = null;
       if (this.ticketService && customerUser?.id) {
-        const temp = this.db
+      const temp = this.db
           .getConnection()
           .prepare(
             `INSERT INTO tickets (guild_id, type, title, status, customer_discord_id, customer_username, created_at, assigned_customer_discord_id)
@@ -1401,7 +1447,7 @@ class CarryService {
     const duration = Math.max(0, now - startedAt);
     const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
     for (const carrierId of assigned) {
-      this.upsertCarrierStatsOnCompletion(carrierId, duration, true);
+      this.upsertCarrierStatsOnCompletion(carrierId, duration, true, { ticketIncrement: 1 });
     }
 
     if (carry.ticket_id && this.ticketService) {
@@ -1418,27 +1464,29 @@ class CarryService {
       });
     }
 
-    await this.closeExecutionChannel(carry.execution_channel_id);
+    await this.closeExecutionChannel(carry.execution_channel_id, { announce: true });
     this.db.logEvent("carry.completed", "carry", carry.id, { duration });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     await this.publishCarrierStatsDashboard().catch(() => {});
   }
 
-  upsertCarrierStatsOnCompletion(carrierId, duration, accepted) {
+  upsertCarrierStatsOnCompletion(carrierId, duration, accepted, options = {}) {
     const now = Date.now();
+    const ticketIncrement = Number(options.ticketIncrement || 0);
     const current = this.db.getConnection().prepare("SELECT * FROM carrier_stats WHERE user_id = ?").get(carrierId);
     if (!current) {
       this.db
         .getConnection()
         .prepare(
-          "INSERT INTO carrier_stats (user_id, completed_count, total_duration_ms, acceptance_rate, active_hours_json, updated_at) VALUES (?, 1, ?, ?, ?, ?)"
+          "INSERT INTO carrier_stats (user_id, completed_count, completed_tickets_count, actual_carries_count, score_total, total_duration_ms, acceptance_rate, active_hours_json, updated_at) VALUES (?, 1, ?, 0, 0, ?, ?, ?, ?)"
         )
-        .run(carrierId, duration, accepted ? 1 : 0, JSON.stringify([new Date(now).getUTCHours()]), now);
+        .run(carrierId, ticketIncrement, duration, accepted ? 1 : 0, JSON.stringify([new Date(now).getUTCHours()]), now);
       return;
     }
 
     const completed = Number(current.completed_count || 0) + 1;
+    const completedTickets = Number(current.completed_tickets_count || 0) + ticketIncrement;
     const totalDuration = Number(current.total_duration_ms || 0) + duration;
     const prevRate = Number(current.acceptance_rate || 0.8);
     const nextRate = Math.max(0.1, Math.min(1, prevRate * 0.8 + (accepted ? 1 : 0) * 0.2));
@@ -1448,9 +1496,31 @@ class CarryService {
     this.db
       .getConnection()
       .prepare(
-        "UPDATE carrier_stats SET completed_count = ?, total_duration_ms = ?, acceptance_rate = ?, active_hours_json = ?, updated_at = ? WHERE user_id = ?"
+        "UPDATE carrier_stats SET completed_count = ?, completed_tickets_count = ?, total_duration_ms = ?, acceptance_rate = ?, active_hours_json = ?, updated_at = ? WHERE user_id = ?"
       )
-      .run(completed, totalDuration, nextRate, JSON.stringify([...hours]), now, carrierId);
+      .run(completed, completedTickets, totalDuration, nextRate, JSON.stringify([...hours]), now, carrierId);
+  }
+
+  addCarrierRunScore(carrierId, carry, runs) {
+    if (!carrierId || !carry) return;
+    const now = Date.now();
+    const addRuns = Math.max(0, Number(runs || 0));
+    if (!addRuns) return;
+    const weight = this.getScoreWeight(carry.carry_type, carry.tier);
+    const addScore = addRuns * weight;
+
+    this.db
+      .getConnection()
+      .prepare(
+        `INSERT INTO carrier_stats (user_id, completed_count, completed_tickets_count, actual_carries_count, score_total, total_duration_ms, acceptance_rate, active_hours_json, updated_at)
+         VALUES (?, 0, 0, ?, ?, 0, 0.8, ?, ?)
+         ON CONFLICT(user_id)
+         DO UPDATE SET
+           actual_carries_count = COALESCE(actual_carries_count, 0) + excluded.actual_carries_count,
+           score_total = COALESCE(score_total, 0) + excluded.score_total,
+           updated_at = excluded.updated_at`
+      )
+      .run(String(carrierId), addRuns, addScore, JSON.stringify([new Date(now).getUTCHours()]), now);
   }
 
   async cancelCarry(carryId, actorId, options = {}) {
@@ -1483,13 +1553,21 @@ class CarryService {
     const channel = await this.client.channels.fetch(channelId).catch(() => null);
     if (!channel || channel.type !== ChannelType.GuildText) return;
 
+    const delayMs = options.immediate ? 1000 : Math.max(10000, this.getCarryAutoDeleteMs());
+    if (options.announce) {
+      await channel
+        .send({
+          embeds: [new EmbedBuilder().setColor(0x95a5a6).setTitle("Carry Completed").setDescription(`Closing ticket in ${Math.round(delayMs / 1000)}s.`)]
+        })
+        .catch(() => {});
+    }
+
     await channel.permissionOverwrites
       .edit(channel.guild.roles.everyone.id, {
         SendMessages: false
       })
       .catch(() => {});
 
-    const delayMs = options.immediate ? 1000 : Math.max(10000, this.getCarryAutoDeleteMs());
     setTimeout(() => {
       channel.delete("Carry closed").catch(() => {});
     }, delayMs);
@@ -1650,6 +1728,7 @@ class CarryService {
       )
       .run(nextRuns, reached ? "pending_confirm" : "in_progress", Date.now(), JSON.stringify(assigned), carry.id);
     this.db.logEvent("carry.log_runs", "carry", carry.id, { actorId, runs: addRuns, total: nextRuns });
+    this.addCarrierRunScore(actorId, carry, addRuns);
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
         content: `Carrier <@${actorId}> logged runs for carry #${carry.id}: +${addRuns} (total ${nextRuns}/${carry.amount}).`,
@@ -2048,8 +2127,9 @@ class CarryService {
     }
 
     if (parsed.action === "confirm_complete") {
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
       const result = await this.confirmCarryCompletion(parsed.carryId, interaction.user.id);
-      await interaction.reply({ content: result.ok ? `Carry #${parsed.carryId} confirmed. Rating prompt posted.` : result.reason, ephemeral: true });
+      await interaction.editReply({ content: result.ok ? `Carry #${parsed.carryId} confirmed. Rating prompt posted.` : result.reason });
       return true;
     }
 
@@ -2125,6 +2205,7 @@ class CarryService {
         return true;
       }
 
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
       this.db
         .getConnection()
         .prepare("INSERT INTO customer_ratings (carry_id, customer_discord_id, rating, comment, created_at) VALUES (?, ?, ?, NULL, ?)")
@@ -2132,7 +2213,7 @@ class CarryService {
       this.db.logEvent("carry.rated", "carry", carryId, { customerId: interaction.user.id, rating });
       await this.finalizeCarry(carryId);
       await this.publishCarrierStatsDashboard().catch(() => {});
-      await interaction.reply({ content: `Thanks. You rated carry #${carryId} with ${rating}/5.`, ephemeral: true });
+      await interaction.editReply({ content: `Thanks. You rated carry #${carryId} with ${rating}/5.` });
       return true;
     }
 
