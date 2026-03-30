@@ -83,17 +83,23 @@ module.exports = {
             .addStringOption((o) => o.setName("name").setDescription("Carry type").setRequired(true))
             .addStringOption((o) => o.setName("tiers").setDescription("Comma-separated tiers").setRequired(true))
         )
-        .addSubcommand((s) => s.setName("remove").setDescription("Remove carry type").addStringOption((o) => o.setName("name").setDescription("Carry type").setRequired(true)))
+        .addSubcommand((s) =>
+          s.setName("remove").setDescription("Remove carry type").addStringOption((o) => o.setName("name").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+        )
         .addSubcommand((s) =>
           s
             .setName("price")
             .setDescription("Set tier price")
-            .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true))
-            .addStringOption((o) => o.setName("tier").setDescription("Tier").setRequired(true))
+            .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+            .addStringOption((o) => o.setName("tier").setDescription("Tier").setRequired(true).setAutocomplete(true))
             .addStringOption((o) => o.setName("price").setDescription("Price (e.g. 400000, 400k, 1.5m)").setRequired(true))
         )
-        .addSubcommand((s) => s.setName("enable").setDescription("Enable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true)))
-        .addSubcommand((s) => s.setName("disable").setDescription("Disable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true)))
+        .addSubcommand((s) =>
+          s.setName("enable").setDescription("Enable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+        )
+        .addSubcommand((s) =>
+          s.setName("disable").setDescription("Disable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+        )
     )
     .addSubcommandGroup((g) =>
       g
@@ -134,10 +140,10 @@ module.exports = {
           s
             .setName("timed-carry")
             .setDescription("Timed carry discount")
-            .addStringOption((o) => o.setName("type").setRequired(true).setDescription("Carry type"))
+            .addStringOption((o) => o.setName("type").setRequired(true).setDescription("Carry type").setAutocomplete(true))
             .addNumberOption((o) => o.setName("percentage").setRequired(true).setDescription("Percent").setMinValue(0).setMaxValue(95))
             .addStringOption((o) => o.setName("duration").setRequired(true).setDescription("e.g. 3h, 2d"))
-            .addStringOption((o) => o.setName("tier").setDescription("Optional tier"))
+            .addStringOption((o) => o.setName("tier").setDescription("Optional tier").setAutocomplete(true))
         )
         .addSubcommand((s) =>
           s
@@ -159,8 +165,8 @@ module.exports = {
           s
             .setName("bulk-carry")
             .setDescription("Bulk carry discount")
-            .addStringOption((o) => o.setName("type").setRequired(true).setDescription("Carry type"))
-            .addStringOption((o) => o.setName("tier").setRequired(true).setDescription("Tier"))
+            .addStringOption((o) => o.setName("type").setRequired(true).setDescription("Carry type").setAutocomplete(true))
+            .addStringOption((o) => o.setName("tier").setRequired(true).setDescription("Tier").setAutocomplete(true))
             .addIntegerOption((o) => o.setName("amount").setRequired(true).setDescription("Min amount").setMinValue(1))
             .addNumberOption((o) => o.setName("percentage").setRequired(true).setDescription("Percent").setMinValue(0).setMaxValue(95))
         )
@@ -215,6 +221,58 @@ module.exports = {
     )
     .addSubcommand((s) => s.setName("help").setDescription("Show carry admin command groups")),
   moderatorOnly: true,
+
+  autocomplete: async (interaction) => {
+    try {
+      const carryService = interaction.client.carryService;
+      if (!carryService?.db?.getConnection) {
+        await interaction.respond([]);
+        return;
+      }
+
+      const focused = interaction.options.getFocused(true);
+      const focusedValue = String(focused?.value || "")
+        .trim()
+        .toLowerCase();
+      const typeSelected = String(interaction.options.getString("type") || "")
+        .trim()
+        .toLowerCase();
+
+      if (focused.name === "type" || focused.name === "name") {
+        const rows = carryService.db
+          .getConnection()
+          .prepare("SELECT DISTINCT lower(carry_type) AS carry_type FROM carry_catalog ORDER BY carry_type ASC")
+          .all();
+        const choices = rows
+          .map((r) => String(r.carry_type || ""))
+          .filter(Boolean)
+          .filter((v) => v.includes(focusedValue))
+          .slice(0, 25)
+          .map((v) => ({ name: v, value: v }));
+        await interaction.respond(choices);
+        return;
+      }
+
+      if (focused.name === "tier" && typeSelected) {
+        const rows = carryService.db
+          .getConnection()
+          .prepare("SELECT DISTINCT lower(tier) AS tier FROM carry_catalog WHERE lower(carry_type)=lower(?) ORDER BY tier ASC")
+          .all(typeSelected);
+        const choices = rows
+          .map((r) => String(r.tier || ""))
+          .filter(Boolean)
+          .filter((v) => v.includes(focusedValue))
+          .slice(0, 25)
+          .map((v) => ({ name: v, value: v }));
+        await interaction.respond(choices);
+        return;
+      }
+
+      await interaction.respond([]);
+    } catch {
+      await interaction.respond([]);
+    }
+  },
 
   execute: async (interaction) => {
     const carryService = interaction.client.carryService;
