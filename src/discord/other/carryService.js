@@ -1270,6 +1270,8 @@ class CarryService {
   buildExecutionEmbed(carry) {
     const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
     const coverage = this.getPaymentCoverage(carry);
+    const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+    const carrierLabel = assigned.length ? assigned.map((id) => `<@${id}>`).join(", ").slice(0, 1024) : "Unassigned";
     const scopePct = Number(breakdown?.scopeDiscount?.percentage || 0);
     const bulkPct = Number(breakdown?.bulkDiscount?.percentage || 0);
     const freeReduction = Number(breakdown?.freeReduction || 0);
@@ -1284,6 +1286,7 @@ class CarryService {
       .addFields(
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
+        { name: "Carrier(s)", value: carrierLabel, inline: false },
         { name: "Unit Price", value: `${this.formatCoinsShort(carry.base_unit_price || 0)}`, inline: true },
         { name: "Paid Amount", value: `${this.formatCoinsShort(carry.paid_amount || 0)}`, inline: true },
         { name: "Remaining", value: `${this.formatCoinsShort(coverage.remainingPayment || 0)}`, inline: true },
@@ -1636,14 +1639,20 @@ class CarryService {
     const carry = this.getCarryById(carryId);
     const nextRuns = Number(carry.logged_runs || 0) + Number(addRuns || 0);
     const reached = nextRuns >= Number(carry.amount || 0);
+    const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+    if (actorId && !assigned.includes(String(actorId))) {
+      assigned.push(String(actorId));
+    }
     this.db
       .getConnection()
-      .prepare("UPDATE carries SET logged_runs = ?, status = ?, started_at = COALESCE(started_at, ?), pending_log_runs = 0, pending_log_actor_id = NULL WHERE id = ?")
-      .run(nextRuns, reached ? "pending_confirm" : "in_progress", Date.now(), carry.id);
+      .prepare(
+        "UPDATE carries SET logged_runs = ?, status = ?, started_at = COALESCE(started_at, ?), assigned_carrier_discord_ids = ?, pending_log_runs = 0, pending_log_actor_id = NULL WHERE id = ?"
+      )
+      .run(nextRuns, reached ? "pending_confirm" : "in_progress", Date.now(), JSON.stringify(assigned), carry.id);
     this.db.logEvent("carry.log_runs", "carry", carry.id, { actorId, runs: addRuns, total: nextRuns });
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
-        content: `Carrier logged runs for carry #${carry.id}: +${addRuns} (total ${nextRuns}/${carry.amount}).`,
+        content: `Carrier <@${actorId}> logged runs for carry #${carry.id}: +${addRuns} (total ${nextRuns}/${carry.amount}).`,
         username: "Carry System",
         avatarURL: null,
         viaWebhook: true
@@ -1955,8 +1964,9 @@ class CarryService {
         await interaction.reply({ content: "Only the requesting user or staff can confirm close.", ephemeral: true });
         return true;
       }
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
       const result = await this.cancelCarry(carryId, interaction.user.id, { immediateDelete: true });
-      await interaction.reply({ content: result.ok ? `Carry #${carryId} force-closed.` : result.reason, ephemeral: true });
+      await interaction.editReply({ content: result.ok ? `Carry #${carryId} force-closed.` : result.reason });
       return true;
     }
 
@@ -1971,7 +1981,8 @@ class CarryService {
         await interaction.reply({ content: "Only the requesting user or staff can cancel this close.", ephemeral: true });
         return true;
       }
-      await interaction.reply({ content: `Close canceled for carry #${carryId}.`, ephemeral: true });
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      await interaction.editReply({ content: `Close canceled for carry #${carryId}.` });
       return true;
     }
 
