@@ -94,6 +94,9 @@ module.exports = {
               member: interaction.member
             });
             if (!result.ok) {
+              if (String(result.reason || "").toLowerCase().includes("already ended")) {
+                await giveawayService.disableGiveawayButtons(interaction.message).catch(() => {});
+              }
               return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
             }
 
@@ -106,13 +109,16 @@ module.exports = {
               userId: interaction.user.id
             });
             if (!result.ok) {
+              if (String(result.reason || "").toLowerCase().includes("already ended")) {
+                await giveawayService.disableGiveawayButtons(interaction.message).catch(() => {});
+              }
               return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
             }
 
             return interaction.editReply({ embeds: [new SuccessEmbed(`Left giveaway #${giveawayId}.`)] });
           }
 
-          if (action === "entrants") {
+          if (action === "entrants" || action === "entrants_prev" || action === "entrants_next") {
             const memberRoleIds = interaction.member?.roles?.cache?.map((role) => role.id) || [];
             const isAdmin = giveawayService.isBridgeAdmin({ discordUserId: interaction.user.id, memberRoleIds });
             if (!isAdmin) {
@@ -121,6 +127,7 @@ module.exports = {
 
             const giveaway = giveawayService.getGiveaway(giveawayId);
             if (!giveaway) {
+              await giveawayService.disableGiveawayButtons(interaction.message).catch(() => {});
               return interaction.editReply({ embeds: [new ErrorEmbed("Giveaway not found or already ended.")] });
             }
 

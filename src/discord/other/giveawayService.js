@@ -361,12 +361,12 @@ class GiveawayService {
     const components = [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`giveaway:entrants:${giveaway.id}:${Math.max(0, safePage - 1)}`)
+          .setCustomId(`giveaway:entrants_prev:${giveaway.id}:${Math.max(0, safePage - 1)}`)
           .setLabel("Prev")
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(safePage <= 0),
         new ButtonBuilder()
-          .setCustomId(`giveaway:entrants:${giveaway.id}:${Math.min(totalPages - 1, safePage + 1)}`)
+          .setCustomId(`giveaway:entrants_next:${giveaway.id}:${Math.min(totalPages - 1, safePage + 1)}`)
           .setLabel("Next")
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(safePage >= totalPages - 1)
@@ -418,6 +418,31 @@ class GiveawayService {
       embeds: [this.buildGiveawayEmbed(giveaway)],
       components: this.buildComponents(true, giveaway.id)
     });
+  }
+
+  async finalizeGiveawayMessage(giveaway, winners) {
+    if (!giveaway?.channelId || !giveaway?.messageId) return;
+    const channel = await this.resolveChannel(giveaway.channelId);
+    if (!channel) return;
+    const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+    if (!message) return;
+
+    const winnerText = winners?.length ? winners.map((winner) => winner.display).join(", ") : null;
+    await message
+      .edit({
+        embeds: [this.buildGiveawayEmbed(giveaway, winnerText ? { winnerText } : { endedNoEntrants: true })],
+        components: []
+      })
+      .catch(() => {});
+  }
+
+  async disableGiveawayButtons(message) {
+    if (!message || typeof message.edit !== "function") return;
+    await message
+      .edit({
+        components: []
+      })
+      .catch(() => {});
   }
 
   async postEndedGiveawayMessage(giveaway, winners) {
@@ -800,7 +825,7 @@ class GiveawayService {
     this.freeId(id);
     this.saveState();
 
-    await this.postEndedGiveawayMessage(giveaway, winners);
+    await this.finalizeGiveawayMessage(giveaway, winners);
     if (!winners.length) {
       this.sendGuildAnnouncement(`Giveaway #${id} ended with no entrants.`);
       return;
