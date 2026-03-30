@@ -38,6 +38,7 @@ class CarryService {
     this.discountEngine = new DiscountEngine(db);
     this.etaEngine = new EtaEngine(db);
     this.reassignmentInterval = null;
+    this.watchdogRunning = false;
   }
 
   initialize(client) {
@@ -59,9 +60,17 @@ class CarryService {
   startWatchdog() {
     if (this.reassignmentInterval) clearInterval(this.reassignmentInterval);
     this.reassignmentInterval = setInterval(() => {
-      this.checkStaleQueueEntries().catch(() => {});
-      this.reconcileMissingCarryArtifacts().catch(() => {});
-      this.sampleCarrierOnlineCount().catch(() => {});
+      if (this.watchdogRunning) return;
+      this.watchdogRunning = true;
+      (async () => {
+        await this.checkStaleQueueEntries().catch(() => {});
+        await this.reconcileMissingCarryArtifacts().catch(() => {});
+        await this.sampleCarrierOnlineCount().catch(() => {});
+      })()
+        .catch(() => {})
+        .finally(() => {
+          this.watchdogRunning = false;
+        });
     }, 60000);
   }
 
@@ -310,7 +319,59 @@ class CarryService {
   }
 
   getCarryAutoDeleteMs() {
-    return Number(this.db.getBinding("carry_autodelete_ms", 30 * 60 * 1000));
+    return Number(this.db.getBinding("carry_autodelete_ms", 60 * 1000));
+  }
+
+  async reopenCarryForTicket(ticketId, actorId = null) {
+    const carry = this.db
+      .getConnection()
+      .prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
+      .get(Number(ticketId));
+
+    if (!carry) return { ok: true, message: "Ticket reopened (no carry linked)." };
+    if (String(carry.status) === "completed") {
+      return { ok: false, reason: "Completed carry cannot be reopened." };
+    }
+
+    let nextStatus = String(carry.status || "queued");
+    if (nextStatus === "cancelled" && Number(carry.logged_runs || 0) <= 0) {
+      nextStatus = "queued";
+      this.db.getConnection().prepare("UPDATE carries SET status = 'queued', cancelled_at = NULL WHERE id = ?").run(carry.id);
+      const exists = this.db.getConnection().prepare("SELECT id FROM queue_entries WHERE carry_id = ?").get(carry.id);
+      const priority = this.computePriorityScore({ isPaid: Number(carry.is_paid) === 1, isFree: Number(carry.is_free) === 1, member: null });
+      if (exists?.id) {
+        this.db
+          .getConnection()
+          .prepare("UPDATE queue_entries SET state = 'queued', priority_score = ?, stale_notified = 0 WHERE carry_id = ?")
+          .run(priority, carry.id);
+      } else {
+        this.db
+          .getConnection()
+          .prepare("INSERT INTO queue_entries (carry_id, state, priority_score, created_at, stale_notified) VALUES (?, 'queued', ?, ?, 0)")
+          .run(carry.id, priority, Date.now());
+      }
+      this.db.logEvent("carry.reopened", "carry", carry.id, { actorId: actorId || null });
+    }
+
+    const current = this.getCarryById(carry.id);
+    const existingChannel = current?.execution_channel_id ? await this.client?.channels?.fetch(current.execution_channel_id).catch(() => null) : null;
+    if (!existingChannel) {
+      if (current?.execution_channel_id) {
+        this.db.getConnection().prepare("UPDATE carries SET execution_channel_id = NULL, execution_message_id = NULL WHERE id = ?").run(carry.id);
+      }
+      const assigned = JSON.parse(current?.assigned_carrier_discord_ids || "[]");
+      const created = await this.createExecutionChannel({ carry: this.getCarryById(carry.id), carrierIds: assigned });
+      if (created?.ok && created.channel?.id) {
+        this.db.getConnection().prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?").run(created.channel.id, carry.id);
+      } else if (nextStatus !== "completed") {
+        return { ok: false, reason: created?.reason || "Failed to recreate carry channel." };
+      }
+    }
+
+    await this.publishCarrierDashboard().catch(() => {});
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    await this.syncCarryTicketIndicators(carry.id).catch(() => {});
+    return { ok: true, message: `Carry #${carry.id} reopened.` };
   }
 
   setCarryTranscriptEnabled(enabled) {

@@ -554,10 +554,16 @@ class TicketService {
       }
 
       if (parsed.action === "reopen") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
         this.db.getConnection().prepare("UPDATE tickets SET status = 'open', closed_at = NULL, reopen_count = reopen_count + 1 WHERE id = ?").run(parsed.ticketId);
         this.db.logEvent("ticket.reopened", "ticket", parsed.ticketId, { actor: interaction.user.id });
+        const carryResult = await this.client?.carryService?.reopenCarryForTicket?.(parsed.ticketId, interaction.user.id).catch((error) => ({
+          ok: false,
+          reason: error?.message || String(error)
+        }));
         await this.syncCarryThreadIndicators(parsed.ticketId).catch(() => {});
-        await interaction.reply({ content: `Ticket #${parsed.ticketId} reopened.`, ephemeral: true });
+        const suffix = carryResult?.ok ? ` ${carryResult?.message || ""}`.trim() : ` Carry reopen failed: ${carryResult?.reason || "unknown error"}`;
+        await interaction.editReply({ content: `Ticket #${parsed.ticketId} reopened.${suffix ? ` ${suffix}` : ""}`.trim() });
         return true;
       }
 
