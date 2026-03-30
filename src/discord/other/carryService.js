@@ -206,11 +206,14 @@ class CarryService {
 
   getCarrierRoleIds() {
     const bound = this.db.getBinding("carrier_claim_role_id", null);
-    if (bound && /^\d{17,20}$/.test(String(bound))) {
-      return [String(bound)];
+    const configured = (config.discord?.carry?.carrierRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id))).map((id) => String(id));
+    if (!bound || !/^\d{17,20}$/.test(String(bound))) {
+      return configured;
     }
 
-    return (config.discord?.carry?.carrierRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id)));
+    const merged = new Set(configured);
+    merged.add(String(bound));
+    return [...merged];
   }
 
   setCarrierClaimRoleId(roleId) {
@@ -234,25 +237,40 @@ class CarryService {
     return /^\d{17,20}$/.test(String(fallback || "")) ? [String(fallback)] : [];
   }
 
+  getMemberRoleIds(member) {
+    if (!member) return [];
+    if (member.roles?.cache && typeof member.roles.cache.map === "function") {
+      return member.roles.cache.map((role) => String(role.id));
+    }
+    if (Array.isArray(member.roles)) {
+      return member.roles.map((id) => String(id));
+    }
+    if (Array.isArray(member._roles)) {
+      return member._roles.map((id) => String(id));
+    }
+    return [];
+  }
+
   isStaff(member) {
     const configured = this.getStaffRoleIds();
     const fallback = config.discord?.commands?.commandRole;
-    const roles = member?.roles?.cache;
-    if (!roles) return false;
+    const roleIds = this.getMemberRoleIds(member);
+    if (!roleIds.length) return false;
     if (configured.length > 0) {
-      return roles.some((role) => configured.includes(role.id));
+      return roleIds.some((id) => configured.includes(id));
     }
-    return fallback ? roles.has(fallback) : false;
+    return fallback ? roleIds.includes(String(fallback)) : false;
   }
 
   isCarrier(member) {
     const carrierRoles = this.getCarrierRoleIds();
-    if (!member?.roles?.cache) return false;
+    const roleIds = this.getMemberRoleIds(member);
+    if (!roleIds.length) return false;
     if (carrierRoles.length === 0) {
       return this.isStaff(member);
     }
 
-    return member.roles.cache.some((role) => carrierRoles.includes(role.id)) || this.isStaff(member);
+    return roleIds.some((id) => carrierRoles.includes(id)) || this.isStaff(member);
   }
 
   setCarryDashboardChannelId(channelId) {
