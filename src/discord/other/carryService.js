@@ -1177,7 +1177,7 @@ class CarryService {
       .addFields(
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
-        { name: "Paid", value: Number(carry.is_paid) ? "Yes" : "No", inline: true },
+        { name: "Paid Amount", value: `${Number(carry.paid_amount || 0)}`, inline: true },
         { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
         { name: "Base", value: `${breakdown?.baseTotal ?? carry.base_total_price ?? 0}`, inline: true },
         { name: "Scope Discount", value: scopeLabel, inline: true },
@@ -1446,10 +1446,12 @@ class CarryService {
     const priority = this.computePriorityScore({ isPaid: true, isFree: Number(carry.is_free) === 1, member: null });
     this.db.getConnection().prepare("UPDATE queue_entries SET priority_score = ? WHERE carry_id = ? AND state IN ('queued','claimed')").run(priority, carry.id);
 
-    this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId, amount: addAmount });
+    const refreshed = this.getCarryById(carry.id);
+    const coverage = this.getPaymentCoverage(refreshed);
+    this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId, amount: addAmount, coverage });
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
-        content: `Payment logged on carry #${carry.id}: +${addAmount}. Total paid: ${Number(carry.paid_amount || 0) + addAmount}.`,
+        content: `Payment logged on carry #${carry.id}: +${addAmount}. Total paid: ${coverage.paidAmount}. Covers ${coverage.coveredRuns}/${coverage.amount} runs. Remaining payment: ${coverage.remainingPayment}.`,
         username: "Carry System",
         avatarURL: null,
         viaWebhook: true
@@ -1458,23 +1460,75 @@ class CarryService {
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     await this.refreshExecutionPanel(carry.id).catch(() => {});
-    return { ok: true };
+    return { ok: true, coverage };
   }
 
-  async logRuns(carryId, actorId, runs) {
-    const carry = this.getCarryById(carryId);
-    if (!carry) return { ok: false, reason: "Carry not found." };
-    const addRuns = Number(runs);
-    if (!Number.isInteger(addRuns) || addRuns <= 0) return { ok: false, reason: "Runs must be a positive integer." };
+  getPaymentCoverage(carry) {
+    const amount = Math.max(0, Number(carry?.amount || 0));
+    const finalPrice = Math.max(0, Number(carry?.final_price || 0));
+    const paidAmount = Math.max(0, Number(carry?.paid_amount || 0));
+    const loggedRuns = Math.max(0, Number(carry?.logged_runs || 0));
+    const unitPrice = amount > 0 ? finalPrice / amount : 0;
+    const coveredRuns = unitPrice > 0 ? Math.floor(paidAmount / unitPrice) : amount;
+    const remainingPayment = Math.max(0, Number((finalPrice - paidAmount).toFixed(2)));
+    const uncoveredRuns = Math.max(0, amount - coveredRuns);
+    const paidRunsRemaining = Math.max(0, coveredRuns - loggedRuns);
+    return { amount, finalPrice, paidAmount, unitPrice, coveredRuns, loggedRuns, remainingPayment, uncoveredRuns, paidRunsRemaining };
+  }
 
-    const nextRuns = Number(carry.logged_runs || 0) + addRuns;
+  async postLogRunsWarning(carry, actorId, addRuns, warnings) {
+    if (!carry?.execution_channel_id || !this.client) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+    await channel.send({
+      content: `<@${actorId}>`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xe67e22)
+          .setTitle(`Run Log Warning • Carry #${carry.id}`)
+          .setDescription(warnings.join("\n"))
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}confirm_log_runs:${carry.id}:${addRuns}:${actorId}`).setLabel("Confirm").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel_log_runs:${carry.id}:${actorId}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}warn_add_paid:${carry.id}:${actorId}`).setLabel("Forgot Paid Amount").setStyle(ButtonStyle.Primary)
+        )
+      ]
+    });
+  }
+
+  async postCustomerOverlogPrompt(carryId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry?.execution_channel_id || !this.client) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+    await channel.send({
+      content: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : undefined,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xe74c3c)
+          .setTitle(`Over-Target Run Confirmation • Carry #${carry.id}`)
+          .setDescription(`Carrier is trying to log beyond requested runs.\nPending add: **${carry.pending_log_runs}**\nCurrent: **${carry.logged_runs}/${carry.amount}**`)
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}customer_confirm_overlog:${carry.id}`).setLabel("Confirm Extra Runs").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}customer_cancel_overlog:${carry.id}`).setLabel("Cancel").setStyle(ButtonStyle.Danger)
+        )
+      ]
+    });
+  }
+
+  async applyLoggedRuns(carryId, actorId, addRuns) {
+    const carry = this.getCarryById(carryId);
+    const nextRuns = Number(carry.logged_runs || 0) + Number(addRuns || 0);
     const reached = nextRuns >= Number(carry.amount || 0);
     this.db
       .getConnection()
-      .prepare("UPDATE carries SET logged_runs = ?, status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
+      .prepare("UPDATE carries SET logged_runs = ?, status = ?, started_at = COALESCE(started_at, ?), pending_log_runs = 0, pending_log_actor_id = NULL WHERE id = ?")
       .run(nextRuns, reached ? "pending_confirm" : "in_progress", Date.now(), carry.id);
     this.db.logEvent("carry.log_runs", "carry", carry.id, { actorId, runs: addRuns, total: nextRuns });
-
     if (carry.ticket_id && this.ticketService) {
       await this.ticketService.mirrorMessage(carry.ticket_id, {
         content: `Carrier logged runs for carry #${carry.id}: +${addRuns} (total ${nextRuns}/${carry.amount}).`,
@@ -1483,13 +1537,41 @@ class CarryService {
         viaWebhook: true
       });
     }
-
     if (reached) {
       await this.sendCustomerCompletionPrompt(carry.id);
     }
     await this.syncCarryTicketIndicators(carry.id);
     await this.refreshExecutionPanel(carry.id).catch(() => {});
     return { ok: true, reached, total: nextRuns };
+  }
+
+  async logRuns(carryId, actorId, runs, options = {}) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    const addRuns = Number(runs);
+    if (!Number.isInteger(addRuns) || addRuns <= 0) return { ok: false, reason: "Runs must be a positive integer." };
+    const coverage = this.getPaymentCoverage(carry);
+    const nextRuns = Number(carry.logged_runs || 0) + addRuns;
+    const unpaidOver = Math.max(0, nextRuns - coverage.coveredRuns);
+    const targetOver = Math.max(0, nextRuns - Number(carry.amount || 0));
+
+    if (!options.actorConfirmed && unpaidOver > 0) {
+      const warnings = [
+        `This log exceeds paid coverage by **${unpaidOver}** runs.`,
+        `Paid covers: **${coverage.coveredRuns}/${coverage.amount}** runs`,
+        `Remaining payment: **${coverage.remainingPayment}**`
+      ];
+      await this.postLogRunsWarning(carry, actorId, addRuns, warnings);
+      return { ok: false, needsActorConfirm: true, reason: "Run log requires confirmation (unpaid overrun)." };
+    }
+
+    if (!options.customerConfirmed && targetOver > 0) {
+      this.db.getConnection().prepare("UPDATE carries SET pending_log_runs = ?, pending_log_actor_id = ? WHERE id = ?").run(addRuns, String(actorId), carry.id);
+      await this.postCustomerOverlogPrompt(carry.id);
+      return { ok: false, needsCustomerConfirm: true, reason: "Over-target run log requires customer confirmation." };
+    }
+
+    return this.applyLoggedRuns(carryId, actorId, addRuns);
   }
 
   async sendCustomerCompletionPrompt(carryId) {
@@ -1688,6 +1770,53 @@ class CarryService {
       return true;
     }
 
+    if (parsed.action === "confirm_log_runs") {
+      const [carryIdRaw, runsRaw, actorId] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      const runs = Number(runsRaw);
+      if (!Number.isInteger(carryId) || !Number.isInteger(runs) || !actorId) {
+        await interaction.reply({ content: "Invalid confirmation payload.", ephemeral: true });
+        return true;
+      }
+      if (String(interaction.user.id) !== String(actorId) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only the requesting carrier can confirm this.", ephemeral: true });
+        return true;
+      }
+      const result = await this.logRuns(carryId, actorId, runs, { actorConfirmed: true });
+      await interaction.reply({ content: result.ok ? `Runs logged for carry #${carryId}.` : result.reason, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "cancel_log_runs") {
+      const [carryIdRaw, actorId] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      if (String(interaction.user.id) !== String(actorId) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only the requesting carrier can cancel this.", ephemeral: true });
+        return true;
+      }
+      await interaction.reply({ content: `Run log canceled for carry #${carryId}.`, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "warn_add_paid") {
+      const [carryIdRaw, actorId] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      if (!Number.isInteger(carryId) || !actorId) {
+        await interaction.reply({ content: "Invalid payload.", ephemeral: true });
+        return true;
+      }
+      if (String(interaction.user.id) !== String(actorId) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only the requesting carrier can use this.", ephemeral: true });
+        return true;
+      }
+      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}mark_paid:${carryId}`).setTitle("Log Payment");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("paid_amount").setLabel("Amount paid").setStyle(TextInputStyle.Short).setRequired(true))
+      );
+      await interaction.showModal(modal);
+      return true;
+    }
+
     if (["claim", "unclaim", "close_ticket", "reping"].includes(parsed.action) && parsed.carryId !== null) {
       if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
         if (parsed.action === "close_ticket" || parsed.action === "reping") {
@@ -1732,6 +1861,44 @@ class CarryService {
     if (parsed.action === "confirm_complete") {
       const result = await this.confirmCarryCompletion(parsed.carryId, interaction.user.id);
       await interaction.reply({ content: result.ok ? `Carry #${parsed.carryId} confirmed. Rating prompt posted.` : result.reason, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "customer_confirm_overlog") {
+      const carryId = Number(parsed.rawId);
+      const carry = this.getCarryById(carryId);
+      if (!carry) {
+        await interaction.reply({ content: "Carry not found.", ephemeral: true });
+        return true;
+      }
+      if (String(carry.customer_discord_id) !== String(interaction.user.id)) {
+        await interaction.reply({ content: "Only customer can confirm over-target runs.", ephemeral: true });
+        return true;
+      }
+      const pendingRuns = Number(carry.pending_log_runs || 0);
+      const actorId = String(carry.pending_log_actor_id || "");
+      if (!pendingRuns || !actorId) {
+        await interaction.reply({ content: "No pending over-target run log.", ephemeral: true });
+        return true;
+      }
+      const result = await this.logRuns(carryId, actorId, pendingRuns, { actorConfirmed: true, customerConfirmed: true });
+      await interaction.reply({ content: result.ok ? `Over-target runs confirmed and logged for carry #${carryId}.` : result.reason, ephemeral: true });
+      return true;
+    }
+
+    if (parsed.action === "customer_cancel_overlog") {
+      const carryId = Number(parsed.rawId);
+      const carry = this.getCarryById(carryId);
+      if (!carry) {
+        await interaction.reply({ content: "Carry not found.", ephemeral: true });
+        return true;
+      }
+      if (String(carry.customer_discord_id) !== String(interaction.user.id) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only customer/staff can cancel this.", ephemeral: true });
+        return true;
+      }
+      this.db.getConnection().prepare("UPDATE carries SET pending_log_runs = 0, pending_log_actor_id = NULL WHERE id = ?").run(carryId);
+      await interaction.reply({ content: `Over-target run log canceled for carry #${carryId}.`, ephemeral: true });
       return true;
     }
 

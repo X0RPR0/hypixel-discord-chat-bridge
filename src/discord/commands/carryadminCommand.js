@@ -464,13 +464,26 @@ module.exports = {
         const carryId = interaction.options.getInteger("carry_id", true);
         const amount = interaction.options.getNumber("amount_or_runs", true);
         const result = await carryService.markPaid(carryId, interaction.user.id, amount);
-        return interaction.editReply({ embeds: [result.ok ? new SuccessEmbed(`Payment logged for carry #${carryId}.`) : new ErrorEmbed(result.reason)] });
+        if (!result.ok) {
+          return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+        }
+        const c = result.coverage;
+        return interaction.editReply({
+          embeds: [
+            new SuccessEmbed(
+              `Payment logged for carry #${carryId}.\nPaid total: \`${c.paidAmount}\`\nCovers runs: \`${c.coveredRuns}/${c.amount}\`\nRemaining payment: \`${c.remainingPayment}\`\nUnpaid runs left: \`${c.uncoveredRuns}\``
+            )
+          ]
+        });
       }
 
       if (sub === "log-runs") {
         const carryId = interaction.options.getInteger("carry_id", true);
         const runs = interaction.options.getInteger("runs", true);
         const result = await carryService.logRuns(carryId, interaction.user.id, runs);
+        if (result?.needsActorConfirm || result?.needsCustomerConfirm) {
+          return interaction.editReply({ embeds: [new SuccessEmbed(result.reason)] });
+        }
         return interaction.editReply({
           embeds: [result.ok ? new SuccessEmbed(`Runs logged for carry #${carryId}.${result.reached ? " Target reached and customer confirmation requested." : ""}`) : new ErrorEmbed(result.reason)]
         });

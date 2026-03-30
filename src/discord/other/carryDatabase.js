@@ -335,6 +335,8 @@ class CarryDatabase {
     tryExec("ALTER TABLE carries ADD COLUMN confirm_message_id TEXT;");
     tryExec("ALTER TABLE carries ADD COLUMN rating_message_id TEXT;");
     tryExec("ALTER TABLE carries ADD COLUMN execution_message_id TEXT;");
+    tryExec("ALTER TABLE carries ADD COLUMN pending_log_runs INTEGER NOT NULL DEFAULT 0;");
+    tryExec("ALTER TABLE carries ADD COLUMN pending_log_actor_id TEXT;");
 
     const schemaVersion = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get();
     if (!schemaVersion) {
