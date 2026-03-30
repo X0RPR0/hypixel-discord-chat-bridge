@@ -178,7 +178,7 @@ class TicketService {
     }
   }
 
-  async createTicket({ guildId, type, title, customer, initialContent = "", source = "discord" }) {
+  async createTicket({ guildId, type, title, customer, initialContent = "", source = "discord", amount = null }) {
     const now = Date.now();
     const customerId = customer?.id || null;
     const customerUsername = customer?.tag || customer?.username || "Unknown";
@@ -203,6 +203,7 @@ class TicketService {
 
     const thread = await this.ensureForumThreadForTicket(ticketId, {
       type,
+      amount,
       customer,
       title,
       initialContent
@@ -747,11 +748,12 @@ class TicketService {
   async createCarryLinkedTicket({ guildId, customer, carryType, tier, amount }) {
     return this.createTicket({
       guildId,
-      type: "manual_carry",
+      type: `${carryType}-${tier}`,
       title: `Carry Request - ${carryType} ${tier}`,
       customer,
       initialContent: `Carry request: ${carryType} ${tier} x${amount}`,
-      source: "carry_request"
+      source: "carry_request",
+      amount
     });
   }
 

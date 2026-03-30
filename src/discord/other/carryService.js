@@ -974,8 +974,10 @@ class CarryService {
 
   async ensureTicketThreadAndLog(ticketId, carryId, customerUser, carryType, tier, amount, finalPrice) {
     if (!ticketId || !this.ticketService) return;
+    const typeLabel = `${carryType}-${tier}`.toLowerCase();
     const thread = await this.ticketService.ensureForumThreadForTicket(ticketId, {
-      type: "manual_carry",
+      type: typeLabel,
+      amount: Number(amount),
       customer: customerUser,
       title: `Carry Request - ${carryType} ${tier}`,
       initialContent: this.buildCarryPricingSummaryText(carryId, carryType, tier, amount, finalPrice)
