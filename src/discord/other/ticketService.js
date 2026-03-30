@@ -119,6 +119,13 @@ class TicketService {
     return clean || fallback;
   }
 
+  buildTicketDisplayName({ type, amount, name }) {
+    const typePart = String(type || "carry").trim();
+    const amountPart = String(amount || "-").trim();
+    const namePart = String(name || "customer").trim();
+    return `├:tickets: 》${typePart} ${amountPart} ${namePart}`.slice(0, 100);
+  }
+
   async publishDashboard(channelId = null) {
     const targetId = channelId || this.getTicketDashboardChannelId();
     if (!targetId || !this.client) {
@@ -244,9 +251,11 @@ class TicketService {
       return null;
     }
 
-    const typePart = this.sanitizeNamePart(context.type || ticket.type || "support", "support");
-    const customerPart = this.sanitizeNamePart(ticket.customer_username || "customer", "customer");
-    const name = `ticket-${typePart}-${customerPart}`.slice(0, 90);
+    const name = this.buildTicketDisplayName({
+      type: context.type || ticket.type || "support",
+      amount: context.amount || "-",
+      name: ticket.customer_username || "customer"
+    });
 
     let starter = null;
     try {

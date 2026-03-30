@@ -29,6 +29,7 @@ module.exports = {
     }
 
     const sub = interaction.options.getSubcommand();
+    const coins = (value) => (typeof service?.formatCoinsShort === "function" ? service.formatCoinsShort(value) : String(Number(value || 0)));
     if (sub === "request") {
       const type = interaction.options.getString("type", true);
       const tier = interaction.options.getString("tier", true);
@@ -50,7 +51,7 @@ module.exports = {
       return interaction.editReply({
         embeds: [
           new SuccessEmbed(
-            `Carry #${created.carryId} queued.\nFinal: \`${created.finalPrice}\`\nETA: \`~${mins}m\`\nFree carry: \`${created.freeEligible ? `yes (${created.freeSource || "weekly"})` : "no"}\``
+            `Carry #${created.carryId} queued.\nFinal: \`${coins(created.finalPrice)}\`\nETA: \`~${mins}m\`\nFree carry: \`${created.freeEligible ? `yes (${created.freeSource || "weekly"})` : "no"}\``
           )
         ]
       });
@@ -87,8 +88,8 @@ module.exports = {
               { name: "Status", value: String(carry.status), inline: true },
               { name: "Amount", value: String(carry.amount), inline: true },
               { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
-              { name: "Final", value: String(carry.final_price), inline: true },
-              { name: "Paid", value: `${Number(carry.paid_amount || 0)}`, inline: true }
+              { name: "Final", value: coins(carry.final_price), inline: true },
+              { name: "Paid", value: coins(carry.paid_amount || 0), inline: true }
             )
         ]
       });
@@ -121,7 +122,7 @@ module.exports = {
             .setColor(0x5865f2)
             .setTitle("My Carries")
             .setDescription(
-              rows.map((r) => `#${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${r.final_price}`).join("\n")
+              rows.map((r) => `#${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`).join("\n")
             )
         ]
       });
@@ -130,4 +131,3 @@ module.exports = {
     return interaction.editReply({ embeds: [new ErrorEmbed("Unknown carry subcommand.")] });
   }
 };
-

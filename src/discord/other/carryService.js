@@ -318,6 +318,34 @@ class CarryService {
     return clean || fallback;
   }
 
+  buildCarryDisplayName({ type, amount, name }) {
+    const typePart = String(type || "carry").trim();
+    const amountPart = String(amount || "-").trim();
+    const namePart = String(name || "customer").trim();
+    return `├:tickets: 》${typePart} ${amountPart} ${namePart}`.slice(0, 100);
+  }
+
+  sanitizeTextChannelName(name, fallback = "carry-ticket") {
+    const clean = String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9_-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 95);
+    return clean || fallback;
+  }
+
+  formatCoinsShort(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return "0";
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1).replace(/\.0$/, "")}b`;
+    if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}m`;
+    if (abs >= 1_000) return `${(n / 1_000).toFixed(abs >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k`;
+    return String(Math.round(n));
+  }
+
   getFreeCarryBonus(userId) {
     if (!userId) return 0;
     const row = this.db.getConnection().prepare("SELECT remaining_count FROM freecarry_bonus WHERE user_id = ?").get(String(userId));
@@ -549,7 +577,7 @@ class CarryService {
     for (const [category, items] of byCategory.entries()) {
       const options = items.slice(0, 25).map((item) => ({
         label: `${item.carry_type} ${item.tier}`.slice(0, 100),
-        description: `Price: ${Number(item.price || 0)} each`.slice(0, 100),
+        description: `Price: ${this.formatCoinsShort(item.price)} each`.slice(0, 100),
         value: `${item.carry_type}|${item.tier}`.slice(0, 100)
       }));
       if (options.length === 0) continue;
@@ -1114,9 +1142,13 @@ class CarryService {
       });
     }
 
-    const typePart = this.sanitizeNamePart(carry.carry_type, "carry");
-    const customerPart = this.sanitizeNamePart(carry.customer_username || "customer", "customer");
-    const name = `carry-${typePart}-${customerPart}`.slice(0, 90);
+    const typeLabel = `${carry.carry_type || "carry"} ${carry.tier || ""}`.trim();
+    const displayName = this.buildCarryDisplayName({
+      type: typeLabel,
+      amount: carry.amount || "-",
+      name: carry.customer_username || "customer"
+    });
+    const name = this.sanitizeTextChannelName(displayName);
 
     const staffRoleIds = this.getStaffRoleIds();
     const overwrites = [
@@ -1156,6 +1188,7 @@ class CarryService {
         name,
         type: ChannelType.GuildText,
         parent: parentId,
+        topic: displayName,
         permissionOverwrites: overwrites
       })
       .catch((error) => ({ __error: error }));
@@ -1183,18 +1216,18 @@ class CarryService {
     const freeReduction = Number(breakdown?.freeReduction || 0);
     const scopeLabel = scopePct > 0 ? `${scopePct}% (${breakdown?.scopeDiscount?.scope || "scope"})` : "None";
     const bulkLabel = bulkPct > 0 ? `${bulkPct}%` : "None";
-    const freeLabel = Number(carry?.is_free) === 1 || freeReduction > 0 ? `Yes (-${freeReduction || 0})` : "No";
+    const freeLabel = Number(carry?.is_free) === 1 || freeReduction > 0 ? `Yes (-${this.formatCoinsShort(freeReduction || 0)})` : "No";
 
     return new EmbedBuilder()
       .setColor(0x1abc9c)
       .setTitle(`Carry #${carry.id}`)
-      .setDescription(`Type: **${carry.carry_type} ${carry.tier}**\nAmount: **${carry.amount}**\nFinal Price: **${carry.final_price}**`)
+      .setDescription(`Type: **${carry.carry_type} ${carry.tier}**\nAmount: **${carry.amount}**\nFinal Price: **${this.formatCoinsShort(carry.final_price)}**`)
       .addFields(
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
-        { name: "Paid Amount", value: `${Number(carry.paid_amount || 0)}`, inline: true },
+        { name: "Paid Amount", value: `${this.formatCoinsShort(carry.paid_amount || 0)}`, inline: true },
         { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
-        { name: "Base", value: `${breakdown?.baseTotal ?? carry.base_total_price ?? 0}`, inline: true },
+        { name: "Base", value: `${this.formatCoinsShort(breakdown?.baseTotal ?? carry.base_total_price ?? 0)}`, inline: true },
         { name: "Scope Discount", value: scopeLabel, inline: true },
         { name: "Bulk Discount", value: bulkLabel, inline: true },
         { name: "Free Carry Used", value: freeLabel, inline: true }
@@ -1250,11 +1283,11 @@ class CarryService {
 
     return [
       `${carryType} ${tier} x${amount}`,
-      `Base: ${baseTotal}`,
+      `Base: ${this.formatCoinsShort(baseTotal)}`,
       `Scope Discount: ${scopePct > 0 ? `${scopePct}% (${scopeScope})` : "None"}`,
       `Bulk Discount: ${bulkPct > 0 ? `${bulkPct}%` : "None"}`,
-      `Free Carry Used: ${freeUsed ? `Yes (-${freeReduction || 0})` : "No"}`,
-      `Final Price: ${finalPrice}`
+      `Free Carry Used: ${freeUsed ? `Yes (-${this.formatCoinsShort(freeReduction || 0)})` : "No"}`,
+      `Final Price: ${this.formatCoinsShort(finalPrice)}`
     ].join(" | ");
   }
 
@@ -2047,9 +2080,9 @@ class CarryService {
             .setTitle(`Carry Request #${created.carryId}`)
             .setDescription("Queued successfully.")
             .addFields(
-              { name: "Base Price", value: `${breakdown.baseTotal}`, inline: true },
-              { name: "Discount", value: `${created.totalDiscount}`, inline: true },
-              { name: "Final", value: `${created.finalPrice}`, inline: true },
+              { name: "Base Price", value: `${this.formatCoinsShort(breakdown.baseTotal)}`, inline: true },
+              { name: "Discount", value: `${this.formatCoinsShort(created.totalDiscount)}`, inline: true },
+              { name: "Final", value: `${this.formatCoinsShort(created.finalPrice)}`, inline: true },
               { name: "ETA", value: `~${mins} min`, inline: true },
               { name: "Free Carry", value: created.freeEligible ? `Applied (${created.freeSource || "weekly"})` : "Not available", inline: true }
             )
