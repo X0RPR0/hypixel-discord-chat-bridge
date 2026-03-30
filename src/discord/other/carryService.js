@@ -52,6 +52,7 @@ class CarryService {
     this.reassignmentInterval = setInterval(() => {
       this.checkStaleQueueEntries().catch(() => {});
       this.reconcileMissingCarryArtifacts().catch(() => {});
+      this.sampleCarrierOnlineCount().catch(() => {});
     }, 60000);
   }
 
@@ -856,6 +857,17 @@ class CarryService {
 
     const created = tx();
     this.ensureTicketThreadAndLog(created.ticketId, created.carryId, customerUser, normalizedType, normalizedTier, qty, created.finalPrice).catch(() => {});
+    this.ghostPingCarrierRole(created.carryId).catch(() => {});
+    const createdCarry = this.getCarryById(created.carryId);
+    if (createdCarry && !createdCarry.execution_channel_id) {
+      this.createExecutionChannel({ carry: createdCarry, carrierIds: [] })
+        .then((res) => {
+          if (res?.ok && res.channel?.id) {
+            this.db.getConnection().prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?").run(res.channel.id, created.carryId);
+          }
+        })
+        .catch(() => {});
+    }
     this.publishCarrierDashboard().catch(() => {});
     this.syncCarryTicketIndicators(created.carryId).catch(() => {});
 
@@ -907,6 +919,20 @@ class CarryService {
     }
   }
 
+  async ghostPingCarrierRole(carryId) {
+    const roleId = this.getCarrierClaimRoleId() || this.getCarrierRoleIds()[0];
+    const channelId = this.getCarrierDashboardChannelId();
+    if (!roleId || !channelId || !this.client) return;
+    const channel = await this.client.channels.fetch(channelId).catch(() => null);
+    if (!channel || typeof channel.send !== "function") return;
+
+    const message = await channel.send({ content: `<@&${roleId}> Carry #${carryId} is waiting in queue.` }).catch(() => null);
+    if (!message) return;
+    setTimeout(() => {
+      message.delete().catch(() => {});
+    }, 1500);
+  }
+
   getEstimatedOnlineCarrierCount() {
     if (!this.client) return 1;
     const guild = this.client.guilds.cache.first();
@@ -922,6 +948,22 @@ class CarryService {
     });
 
     return Math.max(1, count);
+  }
+
+  async sampleCarrierOnlineCount() {
+    const now = Date.now();
+    const onlineCount = this.getEstimatedOnlineCarrierCount();
+    this.db.getConnection().prepare("INSERT INTO carrier_online_samples (sampled_at, online_count) VALUES (?, ?)").run(now, Number(onlineCount));
+    const trimBefore = now - 14 * 24 * 60 * 60 * 1000;
+    this.db.getConnection().prepare("DELETE FROM carrier_online_samples WHERE sampled_at < ?").run(trimBefore);
+  }
+
+  hadCarrierOnlineBetween(fromTs, toTs) {
+    const row = this.db
+      .getConnection()
+      .prepare("SELECT 1 AS ok FROM carrier_online_samples WHERE sampled_at >= ? AND sampled_at <= ? AND online_count > 0 LIMIT 1")
+      .get(Number(fromTs || 0), Number(toTs || Date.now()));
+    return !!row?.ok;
   }
 
   getAcceptanceRateEstimate() {
@@ -971,10 +1013,7 @@ class CarryService {
     const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
     if (!assigned.includes(carrierId)) assigned.push(carrierId);
 
-    this.db
-      .getConnection()
-      .prepare("UPDATE carries SET status = 'claimed', assigned_carrier_discord_ids = ? WHERE id = ?")
-      .run(JSON.stringify(assigned), carry.id);
+    this.db.getConnection().prepare("UPDATE carries SET status = 'claimed', assigned_carrier_discord_ids = ? WHERE id = ?").run(JSON.stringify(assigned), carry.id);
     this.db
       .getConnection()
       .prepare("UPDATE queue_entries SET state = 'claimed', claimed_at = ?, claimed_by_discord_id = ?, stale_notified = 0 WHERE carry_id = ?")
@@ -987,6 +1026,34 @@ class CarryService {
     this.db.logEvent("carry.claimed", "carry", carry.id, { carrierId });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    return { ok: true, carryId: carry.id };
+  }
+
+  async unclaimCarry(carryId, carrierId, allowOverride = false) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    if (!["queued", "claimed", "in_progress"].includes(String(carry.status))) return { ok: false, reason: "Carry is not claimable." };
+
+    const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+    if (!assigned.includes(String(carrierId)) && !allowOverride) {
+      return { ok: false, reason: "Only assigned carrier can unclaim this carry." };
+    }
+
+    const nextAssigned = assigned.filter((id) => String(id) !== String(carrierId));
+    const nextStatus = nextAssigned.length > 0 ? "claimed" : "queued";
+    this.db
+      .getConnection()
+      .prepare("UPDATE carries SET status = ?, assigned_carrier_discord_ids = ? WHERE id = ?")
+      .run(nextStatus, JSON.stringify(nextAssigned), carry.id);
+    this.db
+      .getConnection()
+      .prepare("UPDATE queue_entries SET state = ?, claimed_by_discord_id = CASE WHEN ? THEN claimed_by_discord_id ELSE NULL END WHERE carry_id = ?")
+      .run(nextStatus, nextAssigned.length > 0 ? 1 : 0, carry.id);
+    this.db.logEvent("carry.unclaimed", "carry", carry.id, { carrierId });
+    await this.syncCarryTicketIndicators(carry.id);
+    await this.publishCarrierDashboard();
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
     return { ok: true, carryId: carry.id };
   }
 
@@ -1085,18 +1152,11 @@ class CarryService {
       };
     }
 
-    await channel.send({
+    const panelMessage = await channel.send({
       embeds: [this.buildExecutionEmbed(carry)],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim:${carry.id}`).setLabel("Claim").setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}start:${carry.id}`).setLabel("Start").setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}complete:${carry.id}`).setLabel("Complete").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel:${carry.id}`).setLabel("Cancel").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}mark_paid:${carry.id}`).setLabel("Mark Paid").setStyle(ButtonStyle.Secondary)
-        )
-      ]
+      components: this.buildExecutionComponents(carry)
     });
+    this.db.getConnection().prepare("UPDATE carries SET execution_message_id = ? WHERE id = ?").run(panelMessage.id, carry.id);
 
     return { ok: true, channel };
   }
@@ -1118,11 +1178,40 @@ class CarryService {
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
         { name: "Paid", value: Number(carry.is_paid) ? "Yes" : "No", inline: true },
+        { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
         { name: "Base", value: `${breakdown?.baseTotal ?? carry.base_total_price ?? 0}`, inline: true },
         { name: "Scope Discount", value: scopeLabel, inline: true },
         { name: "Bulk Discount", value: bulkLabel, inline: true },
         { name: "Free Carry Used", value: freeLabel, inline: true }
       );
+  }
+
+  buildExecutionComponents(carry) {
+    const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+    const claimBtn =
+      assigned.length > 0
+        ? new ButtonBuilder().setCustomId(`${CARRY_PREFIX}unclaim:${carry.id}`).setLabel("Unclaim").setStyle(ButtonStyle.Secondary)
+        : new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim:${carry.id}`).setLabel("Claim").setStyle(ButtonStyle.Primary);
+
+    return [
+      new ActionRowBuilder().addComponents(
+        claimBtn,
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_ticket:${carry.id}`).setLabel("Close Ticket").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}mark_paid:${carry.id}`).setLabel("Mark Paid").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}log_runs:${carry.id}`).setLabel("Log Runs").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}reping:${carry.id}`).setLabel("Reping").setStyle(ButtonStyle.Secondary)
+      )
+    ];
+  }
+
+  async refreshExecutionPanel(carryId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry?.execution_channel_id || !carry?.execution_message_id || !this.client) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+    const message = await channel.messages.fetch(carry.execution_message_id).catch(() => null);
+    if (!message) return;
+    await message.edit({ embeds: [this.buildExecutionEmbed(carry)], components: this.buildExecutionComponents(carry) }).catch(() => {});
   }
 
   safePriceBreakdown(raw) {
@@ -1215,32 +1304,6 @@ class CarryService {
         avatarURL: null,
         viaWebhook: true
       });
-    }
-
-    if (carry.execution_channel_id && carry.customer_discord_id && assigned.length > 0 && this.client) {
-      const executionChannel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
-      if (executionChannel && executionChannel.type === ChannelType.GuildText) {
-        await executionChannel
-          .send({
-            content: `<@${carry.customer_discord_id}> Please rate your carry experience.`,
-            embeds: [
-              new EmbedBuilder()
-                .setColor(0xf39c12)
-                .setTitle(`Rate Carry #${carry.id}`)
-                .setDescription("Give a 1-5 rating for the carrier service.")
-            ],
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:1`).setLabel("1").setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:2`).setLabel("2").setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:3`).setLabel("3").setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:4`).setLabel("4").setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:5`).setLabel("5").setStyle(ButtonStyle.Success)
-              )
-            ]
-          })
-          .catch(() => {});
-      }
     }
 
     await this.closeExecutionChannel(carry.execution_channel_id);
@@ -1371,17 +1434,162 @@ class CarryService {
     }
   }
 
-  async markPaid(carryId, actorId) {
+  async markPaid(carryId, actorId, amount = 0) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
 
-    this.db.getConnection().prepare("UPDATE carries SET is_paid = 1 WHERE id = ?").run(carry.id);
+    const addAmount = Number(amount || 0);
+    this.db
+      .getConnection()
+      .prepare("UPDATE carries SET is_paid = CASE WHEN ? > 0 THEN 1 ELSE is_paid END, paid_amount = COALESCE(paid_amount, 0) + ? WHERE id = ?")
+      .run(addAmount, addAmount, carry.id);
     const priority = this.computePriorityScore({ isPaid: true, isFree: Number(carry.is_free) === 1, member: null });
     this.db.getConnection().prepare("UPDATE queue_entries SET priority_score = ? WHERE carry_id = ? AND state IN ('queued','claimed')").run(priority, carry.id);
 
-    this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId });
+    this.db.logEvent("carry.mark_paid", "carry", carry.id, { actorId, amount: addAmount });
+    if (carry.ticket_id && this.ticketService) {
+      await this.ticketService.mirrorMessage(carry.ticket_id, {
+        content: `Payment logged on carry #${carry.id}: +${addAmount}. Total paid: ${Number(carry.paid_amount || 0) + addAmount}.`,
+        username: "Carry System",
+        avatarURL: null,
+        viaWebhook: true
+      });
+    }
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    return { ok: true };
+  }
+
+  async logRuns(carryId, actorId, runs) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    const addRuns = Number(runs);
+    if (!Number.isInteger(addRuns) || addRuns <= 0) return { ok: false, reason: "Runs must be a positive integer." };
+
+    const nextRuns = Number(carry.logged_runs || 0) + addRuns;
+    const reached = nextRuns >= Number(carry.amount || 0);
+    this.db
+      .getConnection()
+      .prepare("UPDATE carries SET logged_runs = ?, status = ?, started_at = COALESCE(started_at, ?) WHERE id = ?")
+      .run(nextRuns, reached ? "pending_confirm" : "in_progress", Date.now(), carry.id);
+    this.db.logEvent("carry.log_runs", "carry", carry.id, { actorId, runs: addRuns, total: nextRuns });
+
+    if (carry.ticket_id && this.ticketService) {
+      await this.ticketService.mirrorMessage(carry.ticket_id, {
+        content: `Carrier logged runs for carry #${carry.id}: +${addRuns} (total ${nextRuns}/${carry.amount}).`,
+        username: "Carry System",
+        avatarURL: null,
+        viaWebhook: true
+      });
+    }
+
+    if (reached) {
+      await this.sendCustomerCompletionPrompt(carry.id);
+    }
+    await this.syncCarryTicketIndicators(carry.id);
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    return { ok: true, reached, total: nextRuns };
+  }
+
+  async sendCustomerCompletionPrompt(carryId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry?.execution_channel_id || !this.client) return;
+    if (carry.confirm_message_id) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+
+    const message = await channel
+      .send({
+        content: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : undefined,
+        embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`Confirm Carry #${carry.id}`).setDescription("Carrier marked all runs complete. Confirm completion.")],
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${CARRY_PREFIX}confirm_complete:${carry.id}`).setLabel("Confirm Complete").setStyle(ButtonStyle.Success))]
+      })
+      .catch(() => null);
+    if (message) {
+      this.db.getConnection().prepare("UPDATE carries SET confirm_message_id = ? WHERE id = ?").run(message.id, carry.id);
+    }
+  }
+
+  async sendRatingPrompt(carryId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry?.execution_channel_id || !this.client) return;
+    const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildText) return;
+
+    const message = await channel
+      .send({
+        content: carry.customer_discord_id ? `<@${carry.customer_discord_id}> Please rate your carry experience.` : undefined,
+        embeds: [new EmbedBuilder().setColor(0xf39c12).setTitle(`Rate Carry #${carry.id}`).setDescription("Give a 1-5 rating for the carrier service.")],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:1`).setLabel("1").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:2`).setLabel("2").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:3`).setLabel("3").setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:4`).setLabel("4").setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:5`).setLabel("5").setStyle(ButtonStyle.Success)
+          )
+        ]
+      })
+      .catch(() => null);
+    if (message) {
+      this.db.getConnection().prepare("UPDATE carries SET rating_message_id = ?, status = 'awaiting_rating' WHERE id = ?").run(message.id, carry.id);
+    }
+  }
+
+  async confirmCarryCompletion(carryId, userId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    if (String(carry.customer_discord_id) !== String(userId)) return { ok: false, reason: "Only customer can confirm completion." };
+    if (Number(carry.logged_runs || 0) < Number(carry.amount || 0)) return { ok: false, reason: "Carry runs are not fully logged yet." };
+
+    this.db.getConnection().prepare("UPDATE carries SET customer_confirmed = 1 WHERE id = ?").run(carry.id);
+    this.db.logEvent("carry.customer_confirmed", "carry", carry.id, { userId });
+    await this.sendRatingPrompt(carry.id);
+    await this.syncCarryTicketIndicators(carry.id);
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    return { ok: true };
+  }
+
+  async closeCarryTicket(carryId, actorId, isStaffActor = false) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    const isCustomer = String(carry.customer_discord_id) === String(actorId);
+    if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can close this ticket." };
+
+    if (Number(carry.logged_runs || 0) <= 0) {
+      return this.cancelCarry(carryId, actorId);
+    }
+
+    return { ok: false, reason: "Runs are already logged. Confirm completion and submit rating to close." };
+  }
+
+  async repingCarriers(carryId, actorId, isStaffActor = false) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    const isCustomer = String(carry.customer_discord_id) === String(actorId);
+    if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can reping." };
+    if (String(carry.status) !== "queued") return { ok: false, reason: "Reping is available only for unclaimed queued carries." };
+
+    const now = Date.now();
+    const ageMs = now - Number(carry.queued_at || carry.requested_at || now);
+    if (ageMs < 6 * 60 * 60 * 1000) return { ok: false, reason: "Reping is available after 6 hours unclaimed." };
+    if (carry.reping_last_at && now - Number(carry.reping_last_at) < 60 * 60 * 1000) return { ok: false, reason: "Reping cooldown active (1h)." };
+    if (!this.hadCarrierOnlineBetween(Number(carry.queued_at || carry.requested_at || now), now)) {
+      return { ok: false, reason: "No carriers were online during this unclaimed window." };
+    }
+
+    await this.ghostPingCarrierRole(carry.id);
+    this.db.getConnection().prepare("UPDATE carries SET reping_last_at = ? WHERE id = ?").run(now, carry.id);
+    this.db.logEvent("carry.reping", "carry", carry.id, { actorId });
+    if (carry.ticket_id && this.ticketService) {
+      await this.ticketService.mirrorMessage(carry.ticket_id, {
+        content: `Carrier reping requested for carry #${carry.id} by <@${actorId}>.`,
+        username: "Carry System",
+        avatarURL: null,
+        viaWebhook: true
+      });
+    }
     return { ok: true };
   }
 
@@ -1480,26 +1688,50 @@ class CarryService {
       return true;
     }
 
-    if (["claim", "start", "complete", "cancel", "mark_paid"].includes(parsed.action) && parsed.carryId !== null) {
+    if (["claim", "unclaim", "close_ticket", "reping"].includes(parsed.action) && parsed.carryId !== null) {
+      if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
+        if (parsed.action === "close_ticket" || parsed.action === "reping") {
+          // customer/staff path handled below
+        } else {
+          await interaction.reply({ content: "Only carriers/staff can perform this action.", ephemeral: true });
+          return true;
+        }
+      }
+
+      let result = null;
+      if (parsed.action === "claim") result = await this.claimCarry(parsed.carryId, interaction.user.id);
+      if (parsed.action === "unclaim") result = await this.unclaimCarry(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
+      if (parsed.action === "close_ticket") result = await this.closeCarryTicket(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
+      if (parsed.action === "reping") result = await this.repingCarriers(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
+
+      const doneText = parsed.action === "reping" ? `Reping sent for carry #${parsed.carryId}.` : `Action \`${parsed.action}\` applied on carry #${parsed.carryId}.`;
+      await interaction.reply({ content: result?.ok ? doneText : result?.reason || "Action failed.", ephemeral: true });
+      return true;
+    }
+
+    if (["mark_paid", "log_runs"].includes(parsed.action) && parsed.carryId !== null) {
       if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
         await interaction.reply({ content: "Only carriers/staff can perform this action.", ephemeral: true });
         return true;
       }
 
-      let result = null;
-      if (parsed.action === "claim") result = await this.claimCarry(parsed.carryId, interaction.user.id);
-      if (parsed.action === "start") result = await this.startCarry(parsed.carryId, interaction.user.id);
-      if (parsed.action === "complete") result = await this.carrierComplete(parsed.carryId, interaction.user.id);
-      if (parsed.action === "cancel") result = await this.cancelCarry(parsed.carryId, interaction.user.id);
-      if (parsed.action === "mark_paid") result = await this.markPaid(parsed.carryId, interaction.user.id);
+      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}${parsed.action}:${parsed.carryId}`).setTitle(parsed.action === "mark_paid" ? "Log Payment" : "Log Runs");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId(parsed.action === "mark_paid" ? "paid_amount" : "runs")
+            .setLabel(parsed.action === "mark_paid" ? "Amount paid" : "Runs completed")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      await interaction.showModal(modal);
+      return true;
+    }
 
-      const doneText =
-        parsed.action === "complete"
-          ? result?.finalized
-            ? `Carry #${parsed.carryId} completed.`
-            : `Carrier completion recorded for carry #${parsed.carryId}. Waiting for customer confirmation.`
-          : `Action \`${parsed.action}\` applied on carry #${parsed.carryId}.`;
-      await interaction.reply({ content: result?.ok ? doneText : result?.reason || "Action failed.", ephemeral: true });
+    if (parsed.action === "confirm_complete") {
+      const result = await this.confirmCarryCompletion(parsed.carryId, interaction.user.id);
+      await interaction.reply({ content: result.ok ? `Carry #${parsed.carryId} confirmed. Rating prompt posted.` : result.reason, ephemeral: true });
       return true;
     }
 
@@ -1523,6 +1755,11 @@ class CarryService {
         return true;
       }
 
+      if (String(carry.status) !== "awaiting_rating") {
+        await interaction.reply({ content: "Rating is not available yet for this carry.", ephemeral: true });
+        return true;
+      }
+
       const existing = this.db
         .getConnection()
         .prepare("SELECT id FROM customer_ratings WHERE carry_id = ? AND customer_discord_id = ?")
@@ -1537,12 +1774,13 @@ class CarryService {
         .prepare("INSERT INTO customer_ratings (carry_id, customer_discord_id, rating, comment, created_at) VALUES (?, ?, ?, NULL, ?)")
         .run(carryId, interaction.user.id, rating, Date.now());
       this.db.logEvent("carry.rated", "carry", carryId, { customerId: interaction.user.id, rating });
+      await this.finalizeCarry(carryId);
       await this.publishCarrierStatsDashboard().catch(() => {});
       await interaction.reply({ content: `Thanks. You rated carry #${carryId} with ${rating}/5.`, ephemeral: true });
       return true;
     }
 
-    if (["claim", "start", "complete", "cancel", "mark_paid"].includes(parsed.action) && parsed.carryId === null) {
+    if (["claim", "start", "complete", "cancel", "mark_paid", "log_runs"].includes(parsed.action) && parsed.carryId === null) {
       if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
         await interaction.reply({ content: "Only carriers/staff can perform this action.", ephemeral: true });
         return true;
@@ -1561,6 +1799,30 @@ class CarryService {
     if (!interaction.customId?.startsWith(CARRY_MODAL_PREFIX)) return false;
 
     const action = interaction.customId.slice(CARRY_MODAL_PREFIX.length);
+    if (action.startsWith("mark_paid:")) {
+      const carryId = Number(action.split(":")[1]);
+      const amount = Number(interaction.fields.getTextInputValue("paid_amount"));
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      const result = await this.markPaid(carryId, interaction.user.id, amount);
+      await interaction.editReply({ content: result.ok ? `Logged payment for carry #${carryId}.` : result.reason });
+      return true;
+    }
+
+    if (action.startsWith("log_runs:")) {
+      const carryId = Number(action.split(":")[1]);
+      const runs = Number(interaction.fields.getTextInputValue("runs"));
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      const result = await this.logRuns(carryId, interaction.user.id, runs);
+      await interaction.editReply({
+        content: result.ok
+          ? result.reached
+            ? `Logged runs for carry #${carryId}. Target reached; customer confirmation requested.`
+            : `Logged runs for carry #${carryId}.`
+          : result.reason
+      });
+      return true;
+    }
+
     if (action.startsWith("request")) {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
       let carryType = null;
@@ -1614,7 +1876,7 @@ class CarryService {
       return true;
     }
 
-    if (!["claim", "start", "complete", "cancel", "mark_paid"].includes(action)) {
+    if (!["claim", "start", "complete", "cancel", "mark_paid", "log_runs"].includes(action)) {
       return false;
     }
 
@@ -1634,7 +1896,8 @@ class CarryService {
     if (action === "start") result = await this.startCarry(carryId, interaction.user.id);
     if (action === "complete") result = await this.carrierComplete(carryId, interaction.user.id);
     if (action === "cancel") result = await this.cancelCarry(carryId, interaction.user.id);
-    if (action === "mark_paid") result = await this.markPaid(carryId, interaction.user.id);
+    if (action === "mark_paid") result = await this.markPaid(carryId, interaction.user.id, 0);
+    if (action === "log_runs") result = await this.logRuns(carryId, interaction.user.id, 1);
 
     const message = result?.ok ? (action === "start" && result.channelId ? `Carry #${carryId} started in <#${result.channelId}>.` : `Action \`${action}\` applied on carry #${carryId}.`) : result?.reason || "Action failed.";
 

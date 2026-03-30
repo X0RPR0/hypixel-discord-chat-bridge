@@ -69,6 +69,7 @@ module.exports = {
             .setDescription("Set required role for claiming carry tickets")
             .addRoleOption((o) => o.setName("role").setDescription("Carrier role").setRequired(true))
         )
+        .addSubcommand((s) => s.setName("carrier-role-show").setDescription("Show required role for claiming carry tickets"))
         .addSubcommand((s) => s.setName("carrier-role-clear").setDescription("Clear required role override for claiming carry tickets"))
     )
     .addSubcommandGroup((g) =>
@@ -183,6 +184,25 @@ module.exports = {
             .addUserOption((o) => o.setName("user").setDescription("User").setRequired(true))
             .addIntegerOption((o) => o.setName("amount").setDescription("Additional credits").setRequired(true).setMinValue(1).setMaxValue(100))
         )
+    )
+    .addSubcommandGroup((g) =>
+      g
+        .setName("ticket")
+        .setDescription("Carry ticket actions")
+        .addSubcommand((s) =>
+          s
+            .setName("mark-paid")
+            .setDescription("Log paid amount on a carry")
+            .addIntegerOption((o) => o.setName("carry_id").setDescription("Carry ID").setRequired(true).setMinValue(1))
+            .addNumberOption((o) => o.setName("amount_or_runs").setDescription("Paid amount").setRequired(true).setMinValue(0))
+        )
+        .addSubcommand((s) =>
+          s
+            .setName("log-runs")
+            .setDescription("Log completed runs for a carry")
+            .addIntegerOption((o) => o.setName("carry_id").setDescription("Carry ID").setRequired(true).setMinValue(1))
+            .addIntegerOption((o) => o.setName("runs").setDescription("Runs").setRequired(true).setMinValue(1))
+        )
     ),
   moderatorOnly: true,
 
@@ -258,6 +278,11 @@ module.exports = {
         const role = interaction.options.getRole("role", true);
         carryService.setCarrierClaimRoleId(role.id);
         return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier claim role set to <@&${role.id}>.`)] });
+      }
+
+      if (sub === "carrier-role-show") {
+        const roleId = carryService.getCarrierClaimRoleId();
+        return interaction.editReply({ embeds: [new SuccessEmbed(roleId ? `Carrier claim role: <@&${roleId}>` : "Carrier claim role override is not set.")] });
       }
 
       if (sub === "carrier-role-clear") {
@@ -431,6 +456,24 @@ module.exports = {
           return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
         }
         return interaction.editReply({ embeds: [new SuccessEmbed(`Granted ${amount} bonus free carry credit(s) to <@${user.id}>. Remaining bonus: ${result.remaining}.`)] });
+      }
+    }
+
+    if (group === "ticket") {
+      if (sub === "mark-paid") {
+        const carryId = interaction.options.getInteger("carry_id", true);
+        const amount = interaction.options.getNumber("amount_or_runs", true);
+        const result = await carryService.markPaid(carryId, interaction.user.id, amount);
+        return interaction.editReply({ embeds: [result.ok ? new SuccessEmbed(`Payment logged for carry #${carryId}.`) : new ErrorEmbed(result.reason)] });
+      }
+
+      if (sub === "log-runs") {
+        const carryId = interaction.options.getInteger("carry_id", true);
+        const runs = interaction.options.getInteger("runs", true);
+        const result = await carryService.logRuns(carryId, interaction.user.id, runs);
+        return interaction.editReply({
+          embeds: [result.ok ? new SuccessEmbed(`Runs logged for carry #${carryId}.${result.reached ? " Target reached and customer confirmation requested." : ""}`) : new ErrorEmbed(result.reason)]
+        });
       }
     }
 

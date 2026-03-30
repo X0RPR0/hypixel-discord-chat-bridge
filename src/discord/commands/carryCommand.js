@@ -1,29 +1,26 @@
-const { SlashCommandBuilder } = require("discord.js");
-const { SuccessEmbed, ErrorEmbed } = require("../../contracts/embedHandler.js");
+const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("carry")
-    .setDescription("Manage carry catalog and pricing")
+    .setDescription("Carry user commands")
     .addSubcommand((s) =>
       s
-        .setName("add")
-        .setDescription("Add carry type with tiers")
-        .addStringOption((o) => o.setName("name").setDescription("Carry type key").setRequired(true))
-        .addStringOption((o) => o.setName("tiers").setDescription("Comma separated tiers").setRequired(true))
-    )
-    .addSubcommand((s) => s.setName("remove").setDescription("Remove carry type").addStringOption((o) => o.setName("name").setRequired(true).setDescription("Carry type")))
-    .addSubcommand((s) =>
-      s
-        .setName("price")
-        .setDescription("Set carry tier price")
+        .setName("request")
+        .setDescription("Request a carry")
         .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true))
         .addStringOption((o) => o.setName("tier").setDescription("Tier").setRequired(true))
-        .addNumberOption((o) => o.setName("price").setDescription("Price per unit").setRequired(true).setMinValue(0))
+        .addIntegerOption((o) => o.setName("amount").setDescription("Amount").setRequired(true).setMinValue(1).setMaxValue(999))
     )
-    .addSubcommand((s) => s.setName("enable").setDescription("Enable carry type").addStringOption((o) => o.setName("type").setDescription("Type").setRequired(true)))
-    .addSubcommand((s) => s.setName("disable").setDescription("Disable carry type").addStringOption((o) => o.setName("type").setDescription("Type").setRequired(true))),
-  moderatorOnly: true,
+    .addSubcommand((s) =>
+      s
+        .setName("status")
+        .setDescription("Check carry status")
+        .addIntegerOption((o) => o.setName("id").setDescription("Carry ID").setRequired(false).setMinValue(1))
+    )
+    .addSubcommand((s) => s.setName("free").setDescription("Check free carry balance"))
+    .addSubcommand((s) => s.setName("mycarries").setDescription("Show your recent carry requests")),
 
   execute: async (interaction) => {
     const service = interaction.client.carryService;
@@ -32,45 +29,105 @@ module.exports = {
     }
 
     const sub = interaction.options.getSubcommand();
-    if (sub === "add") {
-      const name = interaction.options.getString("name", true);
-      const tiers = interaction.options.getString("tiers", true);
-      const count = service.addCarryTypeWithTiers(name, tiers);
-      await service.publishCarryDashboard().catch(() => {});
-      return interaction.editReply({ embeds: [new SuccessEmbed(`Added/updated ${count} tier(s) for **${name}**.`)] });
-    }
-
-    if (sub === "remove") {
-      const name = interaction.options.getString("name", true);
-      const changes = service.removeCarryType(name);
-      await service.publishCarryDashboard().catch(() => {});
-      return interaction.editReply({ embeds: [new SuccessEmbed(`Removed ${changes} carry tier entries for **${name}**.`)] });
-    }
-
-    if (sub === "price") {
+    if (sub === "request") {
       const type = interaction.options.getString("type", true);
       const tier = interaction.options.getString("tier", true);
-      const price = interaction.options.getNumber("price", true);
-      const updated = service.setCarryPrice(type, tier, price);
-      if (!updated) return interaction.editReply({ embeds: [new ErrorEmbed("Carry type/tier not found.")] });
-      await service.publishCarryDashboard().catch(() => {});
-      return interaction.editReply({ embeds: [new SuccessEmbed(`Set **${type} ${tier}** price to ${price}.`)] });
+      const amount = interaction.options.getInteger("amount", true);
+      const created = service.createCarryRequest({
+        guildId: interaction.guildId,
+        customerUser: interaction.user,
+        member: interaction.member,
+        carryType: type,
+        tier,
+        amount,
+        source: "slash"
+      });
+      if (!created.ok) {
+        return interaction.editReply({ embeds: [new ErrorEmbed(created.reason)] });
+      }
+
+      const mins = Math.max(1, Math.round(created.eta.etaMs / 60000));
+      return interaction.editReply({
+        embeds: [
+          new SuccessEmbed(
+            `Carry #${created.carryId} queued.\nFinal: \`${created.finalPrice}\`\nETA: \`~${mins}m\`\nFree carry: \`${created.freeEligible ? `yes (${created.freeSource || "weekly"})` : "no"}\``
+          )
+        ]
+      });
     }
 
-    if (sub === "enable") {
-      const type = interaction.options.getString("type", true);
-      const changes = service.setCarryEnabled(type, true);
-      await service.publishCarryDashboard().catch(() => {});
-      return interaction.editReply({ embeds: [new SuccessEmbed(`Enabled ${changes} entries for **${type}**.`)] });
+    if (sub === "status") {
+      const carryId = interaction.options.getInteger("id");
+      let carry = null;
+      if (carryId) {
+        carry = service.getCarryById(carryId);
+      } else {
+        carry = service
+          .db
+          .getConnection()
+          .prepare("SELECT * FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 1")
+          .get(String(interaction.user.id));
+      }
+
+      if (!carry) {
+        return interaction.editReply({ embeds: [new ErrorEmbed("No carry found.")] });
+      }
+
+      if (String(carry.customer_discord_id) !== String(interaction.user.id)) {
+        return interaction.editReply({ embeds: [new ErrorEmbed("You can only view your own carries.")] });
+      }
+
+      return interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle(`Carry #${carry.id}`)
+            .setDescription(`Type: **${carry.carry_type} ${carry.tier}**`)
+            .addFields(
+              { name: "Status", value: String(carry.status), inline: true },
+              { name: "Amount", value: String(carry.amount), inline: true },
+              { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
+              { name: "Final", value: String(carry.final_price), inline: true },
+              { name: "Paid", value: `${Number(carry.paid_amount || 0)}`, inline: true }
+            )
+        ]
+      });
     }
 
-    if (sub === "disable") {
-      const type = interaction.options.getString("type", true);
-      const changes = service.setCarryEnabled(type, false);
-      await service.publishCarryDashboard().catch(() => {});
-      return interaction.editReply({ embeds: [new SuccessEmbed(`Disabled ${changes} entries for **${type}**.`)] });
+    if (sub === "free") {
+      const status = service.getFreeCarryStatus(interaction.user.id);
+      return interaction.editReply({
+        embeds: [
+          new SuccessEmbed(
+            `Week: \`${status.weekKey}\`\nWeekly: \`${status.weeklyRemaining}/${status.limit}\`\nBonus: \`${status.bonusRemaining}\`\nTotal available: \`${status.totalRemaining}\``
+          )
+        ]
+      });
+    }
+
+    if (sub === "mycarries") {
+      const rows = service
+        .db
+        .getConnection()
+        .prepare("SELECT id, carry_type, tier, amount, status, final_price, logged_runs FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 10")
+        .all(String(interaction.user.id));
+      if (!rows.length) {
+        return interaction.editReply({ embeds: [new ErrorEmbed("No carries found.")] });
+      }
+
+      return interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle("My Carries")
+            .setDescription(
+              rows.map((r) => `#${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${r.final_price}`).join("\n")
+            )
+        ]
+      });
     }
 
     return interaction.editReply({ embeds: [new ErrorEmbed("Unknown carry subcommand.")] });
   }
 };
+

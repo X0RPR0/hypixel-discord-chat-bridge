@@ -157,6 +157,11 @@ class CarryDatabase {
 
   runMigrations() {
     const db = this.connection;
+    const tryExec = (sql) => {
+      try {
+        db.exec(sql);
+      } catch {}
+    };
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS schema_meta (
@@ -316,7 +321,20 @@ class CarryDatabase {
         payload_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS carrier_online_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sampled_at INTEGER NOT NULL,
+        online_count INTEGER NOT NULL
+      );
     `);
+
+    tryExec("ALTER TABLE carries ADD COLUMN logged_runs INTEGER NOT NULL DEFAULT 0;");
+    tryExec("ALTER TABLE carries ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0;");
+    tryExec("ALTER TABLE carries ADD COLUMN reping_last_at INTEGER;");
+    tryExec("ALTER TABLE carries ADD COLUMN confirm_message_id TEXT;");
+    tryExec("ALTER TABLE carries ADD COLUMN rating_message_id TEXT;");
+    tryExec("ALTER TABLE carries ADD COLUMN execution_message_id TEXT;");
 
     const schemaVersion = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get();
     if (!schemaVersion) {
