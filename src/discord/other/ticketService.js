@@ -235,14 +235,13 @@ class TicketService {
     }
 
     const name = `ticket-${ticket.id}-${String(context.type || ticket.type || "support").replace(/[^a-z0-9_-]/gi, "-").slice(0, 36)}`;
-    const staffMention = this.getStaffRoleIds()[0] ? `<@&${this.getStaffRoleIds()[0]}>` : "";
 
     let starter = null;
     try {
       starter = await forum.threads.create({
         name,
         message: {
-          content: `${staffMention} Ticket #${ticket.id} opened by <@${ticket.customer_discord_id || "0"}>`,
+          content: `Ticket #${ticket.id} opened by <@${ticket.customer_discord_id || "0"}>`,
           embeds: [
             new EmbedBuilder()
               .setColor(0x2ecc71)

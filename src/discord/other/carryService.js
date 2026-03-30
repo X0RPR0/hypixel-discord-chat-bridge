@@ -190,7 +190,26 @@ class CarryService {
   }
 
   getCarrierRoleIds() {
+    const bound = this.db.getBinding("carrier_claim_role_id", null);
+    if (bound && /^\d{17,20}$/.test(String(bound))) {
+      return [String(bound)];
+    }
+
     return (config.discord?.carry?.carrierRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id)));
+  }
+
+  setCarrierClaimRoleId(roleId) {
+    if (!roleId) {
+      this.db.setBinding("carrier_claim_role_id", null);
+      return;
+    }
+
+    this.db.setBinding("carrier_claim_role_id", String(roleId));
+  }
+
+  getCarrierClaimRoleId() {
+    const bound = this.db.getBinding("carrier_claim_role_id", null);
+    return bound && /^\d{17,20}$/.test(String(bound)) ? String(bound) : null;
   }
 
   getStaffRoleIds() {
@@ -863,7 +882,7 @@ class CarryService {
       type: "manual_carry",
       customer: customerUser,
       title: `Carry Request - ${carryType} ${tier}`,
-      initialContent: `${carryType} ${tier} x${amount} | Final Price: ${finalPrice}`
+      initialContent: this.buildCarryPricingSummaryText(carryId, carryType, tier, amount, finalPrice)
     });
 
     if (thread) {
@@ -1070,10 +1089,11 @@ class CarryService {
       embeds: [this.buildExecutionEmbed(carry)],
       components: [
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}complete_channel:${carry.id}`).setLabel("Complete").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel_channel:${carry.id}`).setLabel("Cancel").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}customer_confirm:${carry.id}`).setLabel("Customer Confirm").setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}ticket_reopen:${carry.id}`).setLabel("Reopen Ticket").setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim:${carry.id}`).setLabel("Claim").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}start:${carry.id}`).setLabel("Start").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}complete:${carry.id}`).setLabel("Complete").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel:${carry.id}`).setLabel("Cancel").setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}mark_paid:${carry.id}`).setLabel("Mark Paid").setStyle(ButtonStyle.Secondary)
         )
       ]
     });
@@ -1082,6 +1102,14 @@ class CarryService {
   }
 
   buildExecutionEmbed(carry) {
+    const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
+    const scopePct = Number(breakdown?.scopeDiscount?.percentage || 0);
+    const bulkPct = Number(breakdown?.bulkDiscount?.percentage || 0);
+    const freeReduction = Number(breakdown?.freeReduction || 0);
+    const scopeLabel = scopePct > 0 ? `${scopePct}% (${breakdown?.scopeDiscount?.scope || "scope"})` : "None";
+    const bulkLabel = bulkPct > 0 ? `${bulkPct}%` : "None";
+    const freeLabel = Number(carry?.is_free) === 1 || freeReduction > 0 ? `Yes (-${freeReduction || 0})` : "No";
+
     return new EmbedBuilder()
       .setColor(0x1abc9c)
       .setTitle(`Carry #${carry.id}`)
@@ -1089,26 +1117,51 @@ class CarryService {
       .addFields(
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
-        { name: "Paid", value: Number(carry.is_paid) ? "Yes" : "No", inline: true }
+        { name: "Paid", value: Number(carry.is_paid) ? "Yes" : "No", inline: true },
+        { name: "Base", value: `${breakdown?.baseTotal ?? carry.base_total_price ?? 0}`, inline: true },
+        { name: "Scope Discount", value: scopeLabel, inline: true },
+        { name: "Bulk Discount", value: bulkLabel, inline: true },
+        { name: "Free Carry Used", value: freeLabel, inline: true }
       );
+  }
+
+  safePriceBreakdown(raw) {
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  buildCarryPricingSummaryText(carryId, carryType, tier, amount, finalPrice) {
+    const carry = carryId ? this.getCarryById(carryId) : null;
+    const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
+    const baseTotal = breakdown?.baseTotal ?? carry?.base_total_price ?? 0;
+    const scopePct = Number(breakdown?.scopeDiscount?.percentage || 0);
+    const scopeScope = breakdown?.scopeDiscount?.scope || "scope";
+    const bulkPct = Number(breakdown?.bulkDiscount?.percentage || 0);
+    const freeReduction = Number(breakdown?.freeReduction || 0);
+    const freeUsed = Number(carry?.is_free) === 1 || freeReduction > 0;
+
+    return [
+      `${carryType} ${tier} x${amount}`,
+      `Base: ${baseTotal}`,
+      `Scope Discount: ${scopePct > 0 ? `${scopePct}% (${scopeScope})` : "None"}`,
+      `Bulk Discount: ${bulkPct > 0 ? `${bulkPct}%` : "None"}`,
+      `Free Carry Used: ${freeUsed ? `Yes (-${freeReduction || 0})` : "No"}`,
+      `Final Price: ${finalPrice}`
+    ].join(" | ");
   }
 
   async carrierComplete(carryId, carrierId) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
 
-    this.db.getConnection().prepare("UPDATE carries SET carrier_confirmed = 1 WHERE id = ?").run(carry.id);
+    this.db.getConnection().prepare("UPDATE carries SET carrier_confirmed = 1, customer_confirmed = 1 WHERE id = ?").run(carry.id);
     this.db.logEvent("carry.carrier_confirmed", "carry", carry.id, { carrierId });
-
-    const refreshed = this.getCarryById(carry.id);
-    if (Number(refreshed.customer_confirmed) === 1) {
-      await this.finalizeCarry(refreshed.id);
-      return { ok: true, finalized: true };
-    }
-
-    this.db.getConnection().prepare("UPDATE carries SET status = 'pending_confirm' WHERE id = ?").run(carry.id);
-    await this.syncCarryTicketIndicators(carry.id);
-    return { ok: true, finalized: false };
+    await this.finalizeCarry(carry.id);
+    return { ok: true, finalized: true };
   }
 
   async customerConfirm(carryId, customerId) {
@@ -1427,6 +1480,29 @@ class CarryService {
       return true;
     }
 
+    if (["claim", "start", "complete", "cancel", "mark_paid"].includes(parsed.action) && parsed.carryId !== null) {
+      if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
+        await interaction.reply({ content: "Only carriers/staff can perform this action.", ephemeral: true });
+        return true;
+      }
+
+      let result = null;
+      if (parsed.action === "claim") result = await this.claimCarry(parsed.carryId, interaction.user.id);
+      if (parsed.action === "start") result = await this.startCarry(parsed.carryId, interaction.user.id);
+      if (parsed.action === "complete") result = await this.carrierComplete(parsed.carryId, interaction.user.id);
+      if (parsed.action === "cancel") result = await this.cancelCarry(parsed.carryId, interaction.user.id);
+      if (parsed.action === "mark_paid") result = await this.markPaid(parsed.carryId, interaction.user.id);
+
+      const doneText =
+        parsed.action === "complete"
+          ? result?.finalized
+            ? `Carry #${parsed.carryId} completed.`
+            : `Carrier completion recorded for carry #${parsed.carryId}. Waiting for customer confirmation.`
+          : `Action \`${parsed.action}\` applied on carry #${parsed.carryId}.`;
+      await interaction.reply({ content: result?.ok ? doneText : result?.reason || "Action failed.", ephemeral: true });
+      return true;
+    }
+
     if (parsed.action === "rate") {
       const [carryIdRaw, ratingRaw] = String(parsed.rawId || "").split(":");
       const carryId = Number(carryIdRaw);
@@ -1475,52 +1551,6 @@ class CarryService {
       const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}${parsed.action}`).setTitle(`${parsed.action} Carry`);
       modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("carry_id").setLabel("Carry ID").setStyle(TextInputStyle.Short).setRequired(true)));
       await interaction.showModal(modal);
-      return true;
-    }
-
-    if (parsed.action === "complete_channel") {
-      if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
-        await interaction.reply({ content: "Only carriers/staff can complete carries.", ephemeral: true });
-        return true;
-      }
-
-      const result = await this.carrierComplete(parsed.carryId, interaction.user.id);
-      await interaction.reply({
-        content: result.ok ? (result.finalized ? `Carry #${parsed.carryId} completed.` : `Carrier completion recorded for carry #${parsed.carryId}. Waiting for customer confirmation.`) : result.reason,
-        ephemeral: true
-      });
-      return true;
-    }
-
-    if (parsed.action === "cancel_channel") {
-      if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
-        await interaction.reply({ content: "Only carriers/staff can cancel carries.", ephemeral: true });
-        return true;
-      }
-
-      const result = await this.cancelCarry(parsed.carryId, interaction.user.id);
-      await interaction.reply({ content: result.ok ? `Carry #${parsed.carryId} cancelled.` : result.reason, ephemeral: true });
-      return true;
-    }
-
-    if (parsed.action === "customer_confirm") {
-      const result = await this.customerConfirm(parsed.carryId, interaction.user.id);
-      await interaction.reply({
-        content: result.ok ? (result.finalized ? `Carry #${parsed.carryId} confirmed and completed.` : `Customer confirmation recorded. Waiting for carrier completion.`) : result.reason,
-        ephemeral: true
-      });
-      return true;
-    }
-
-    if (parsed.action === "ticket_reopen") {
-      const carry = this.getCarryById(parsed.carryId);
-      if (!carry?.ticket_id) {
-        await interaction.reply({ content: "No linked ticket found.", ephemeral: true });
-        return true;
-      }
-
-      this.db.getConnection().prepare("UPDATE tickets SET status = 'open', closed_at = NULL, reopen_count = reopen_count + 1 WHERE id = ?").run(carry.ticket_id);
-      await interaction.reply({ content: `Ticket #${carry.ticket_id} reopened by staff flow.`, ephemeral: true });
       return true;
     }
 
