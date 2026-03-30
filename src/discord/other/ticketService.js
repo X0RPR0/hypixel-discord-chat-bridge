@@ -665,13 +665,11 @@ class TicketService {
 
     for (const channelId of channelsToDelete) {
       const channel = await this.client?.channels?.fetch(channelId).catch(() => null);
-      if (channel?.deletable) {
+      if (channel) {
         const deleted = await channel.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch((error) => ({ __error: error }));
         if (deleted?.__error) {
           details.push(`execution-channel:${channelId} ${deleted.__error?.message || "delete failed"}`);
         }
-      } else if (channel) {
-        details.push(`execution-channel:${channelId} not deletable`);
       }
     }
 
@@ -684,18 +682,21 @@ class TicketService {
         await thread.setLocked(false).catch(() => {});
       }
 
-      if (thread.deletable) {
-        const deletedThread = await thread.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch((error) => ({ __error: error }));
-        if (deletedThread?.__error) {
-          details.push(`forum-thread:${thread.id} ${deletedThread.__error?.message || "delete failed"}`);
-        }
-      } else {
-        details.push(`forum-thread:${thread.id} not deletable`);
+      const deletedThread = await thread.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch((error) => ({ __error: error }));
+      if (deletedThread?.__error) {
+        details.push(`forum-thread:${thread.id} ${deletedThread.__error?.message || "delete failed"}`);
       }
     }
 
     this.db.logEvent("ticket.deleted_entry", "ticket", ticketId, { actorId, details });
-    return { ok: true, details };
+    if (details.length > 0) {
+      return {
+        ok: false,
+        reason: "Database entry deleted, but one or more Discord objects could not be deleted.",
+        details
+      };
+    }
+    return { ok: true, details: [] };
   }
 
   async deleteOldTicketEntries({ beforeTicketId = null, olderThanDays = null, limit = 100, actorId = null, dryRun = false } = {}) {

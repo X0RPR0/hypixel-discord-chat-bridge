@@ -90,7 +90,7 @@ module.exports = {
             .setDescription("Set tier price")
             .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true))
             .addStringOption((o) => o.setName("tier").setDescription("Tier").setRequired(true))
-            .addNumberOption((o) => o.setName("price").setDescription("Price").setRequired(true).setMinValue(0))
+            .addStringOption((o) => o.setName("price").setDescription("Price (e.g. 400000, 400k, 1.5m)").setRequired(true))
         )
         .addSubcommand((s) => s.setName("enable").setDescription("Enable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true)))
         .addSubcommand((s) => s.setName("disable").setDescription("Disable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true)))
@@ -338,11 +338,16 @@ module.exports = {
       if (sub === "price") {
         const type = interaction.options.getString("type", true);
         const tier = interaction.options.getString("tier", true);
-        const price = interaction.options.getNumber("price", true);
+        const priceRaw = interaction.options.getString("price", true);
+        const price = typeof carryService.parseCoinsInput === "function" ? carryService.parseCoinsInput(priceRaw) : Number(priceRaw);
+        if (!Number.isFinite(price) || price < 0) {
+          return interaction.editReply({ embeds: [new ErrorEmbed("Invalid price. Use values like `400000`, `400k`, `1.5m`.")] });
+        }
         const updated = carryService.setCarryPrice(type, tier, price);
         if (!updated) return interaction.editReply({ embeds: [new ErrorEmbed("Carry type/tier not found.")] });
         await carryService.publishCarryDashboard().catch(() => {});
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Set **${type} ${tier}** price to ${price}.`)] });
+        const pretty = typeof carryService.formatCoinsShort === "function" ? carryService.formatCoinsShort(price) : String(price);
+        return interaction.editReply({ embeds: [new SuccessEmbed(`Set **${type} ${tier}** price to ${pretty}.`)] });
       }
 
       if (sub === "enable") {

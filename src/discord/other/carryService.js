@@ -1284,6 +1284,7 @@ class CarryService {
       .addFields(
         { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
         { name: "Status", value: carry.status, inline: true },
+        { name: "Unit Price", value: `${this.formatCoinsShort(carry.base_unit_price || 0)}`, inline: true },
         { name: "Paid Amount", value: `${this.formatCoinsShort(carry.paid_amount || 0)}`, inline: true },
         { name: "Remaining", value: `${this.formatCoinsShort(coverage.remainingPayment || 0)}`, inline: true },
         { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
