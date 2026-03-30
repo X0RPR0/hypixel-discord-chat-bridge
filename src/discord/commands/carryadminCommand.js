@@ -203,6 +203,15 @@ module.exports = {
             .addIntegerOption((o) => o.setName("carry_id").setDescription("Carry ID").setRequired(true).setMinValue(1))
             .addIntegerOption((o) => o.setName("runs").setDescription("Runs").setRequired(true).setMinValue(1))
         )
+        .addSubcommand((s) =>
+          s
+            .setName("delete-old")
+            .setDescription("Bulk delete old ticket entries")
+            .addIntegerOption((o) => o.setName("before_ticket_id").setDescription("Delete tickets with ID lower than this").setMinValue(1))
+            .addIntegerOption((o) => o.setName("older_than_days").setDescription("Delete tickets older than N days").setMinValue(1))
+            .addIntegerOption((o) => o.setName("limit").setDescription("Max entries to process (default 100)").setMinValue(1).setMaxValue(1000))
+            .addBooleanOption((o) => o.setName("dry_run").setDescription("Only show what would be deleted"))
+        )
     ),
   moderatorOnly: true,
 
@@ -486,6 +495,37 @@ module.exports = {
         }
         return interaction.editReply({
           embeds: [result.ok ? new SuccessEmbed(`Runs logged for carry #${carryId}.${result.reached ? " Target reached and customer confirmation requested." : ""}`) : new ErrorEmbed(result.reason)]
+        });
+      }
+
+      if (sub === "delete-old") {
+        const beforeTicketId = interaction.options.getInteger("before_ticket_id");
+        const olderThanDays = interaction.options.getInteger("older_than_days");
+        const limit = interaction.options.getInteger("limit") || 100;
+        const dryRun = interaction.options.getBoolean("dry_run") || false;
+
+        const result = await ticketService.deleteOldTicketEntries({
+          beforeTicketId,
+          olderThanDays,
+          limit,
+          actorId: interaction.user.id,
+          dryRun
+        });
+
+        if (!result.ok) {
+          return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+        }
+
+        if (result.dryRun) {
+          const preview = result.ids.slice(0, 25).join(", ");
+          return interaction.editReply({
+            embeds: [new SuccessEmbed(`Dry run matched **${result.matched}** ticket(s).\nIDs: ${preview || "none"}${result.matched > 25 ? " ..." : ""}`)]
+          });
+        }
+
+        const details = result.errorDetails?.length ? `\nErrors: ${result.errorDetails.join(" | ")}` : "";
+        return interaction.editReply({
+          embeds: [new SuccessEmbed(`Delete-old complete. Matched: **${result.matched}**, deleted: **${result.deleted}**, failed: **${result.failed}**.${details}`)]
         });
       }
     }

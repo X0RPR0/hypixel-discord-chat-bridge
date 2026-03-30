@@ -563,7 +563,8 @@ class TicketService {
       if (parsed.action === "delete_entry") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         const result = await this.deleteTicketEntry(parsed.ticketId, interaction.user.id);
-        await interaction.editReply({ content: result.ok ? `Ticket #${parsed.ticketId} fully deleted.` : `Delete failed: ${result.reason}` });
+        const details = Array.isArray(result.details) && result.details.length ? `\nDetails: ${result.details.join(" | ")}` : "";
+        await interaction.editReply({ content: result.ok ? `Ticket #${parsed.ticketId} fully deleted.${details}` : `Delete failed: ${result.reason}${details}` });
         return true;
       }
 
@@ -636,38 +637,111 @@ class TicketService {
     if (!ticket) return { ok: false, reason: "Ticket not found." };
 
     const db = this.db.getConnection();
+    const details = [];
     const carries = db.prepare("SELECT id, execution_channel_id FROM carries WHERE ticket_id = ?").all(Number(ticketId));
     const channelsToDelete = carries
       .map((row) => String(row.execution_channel_id || ""))
       .filter(Boolean);
+    const thread = ticket.forum_thread_id ? await this.client?.channels?.fetch(ticket.forum_thread_id).catch(() => null) : null;
 
-    const tx = db.transaction(() => {
-      const carryIds = carries.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
-      if (carryIds.length > 0) {
-        const placeholders = carryIds.map(() => "?").join(",");
-        db.prepare(`DELETE FROM queue_entries WHERE carry_id IN (${placeholders})`).run(...carryIds);
-        db.prepare(`DELETE FROM customer_ratings WHERE carry_id IN (${placeholders})`).run(...carryIds);
-        db.prepare(`DELETE FROM carries WHERE id IN (${placeholders})`).run(...carryIds);
-      }
-      db.prepare("DELETE FROM ticket_messages WHERE ticket_id = ?").run(Number(ticketId));
-      db.prepare("DELETE FROM tickets WHERE id = ?").run(Number(ticketId));
-    });
-    tx();
+    try {
+      const tx = db.transaction(() => {
+        const carryIds = carries.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+        if (carryIds.length > 0) {
+          const placeholders = carryIds.map(() => "?").join(",");
+          db.prepare(`DELETE FROM queue_entries WHERE carry_id IN (${placeholders})`).run(...carryIds);
+          db.prepare(`DELETE FROM customer_ratings WHERE carry_id IN (${placeholders})`).run(...carryIds);
+          db.prepare(`DELETE FROM carries WHERE id IN (${placeholders})`).run(...carryIds);
+        }
+        db.prepare("DELETE FROM ticket_messages WHERE ticket_id = ?").run(Number(ticketId));
+        db.prepare("DELETE FROM tickets WHERE id = ?").run(Number(ticketId));
+      });
+      tx();
+    } catch (error) {
+      details.push(`db: ${error?.message || String(error)}`);
+      return { ok: false, reason: "Database cleanup failed.", details };
+    }
 
     for (const channelId of channelsToDelete) {
       const channel = await this.client?.channels?.fetch(channelId).catch(() => null);
       if (channel?.deletable) {
-        await channel.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch(() => {});
+        const deleted = await channel.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch((error) => ({ __error: error }));
+        if (deleted?.__error) {
+          details.push(`execution-channel:${channelId} ${deleted.__error?.message || "delete failed"}`);
+        }
+      } else if (channel) {
+        details.push(`execution-channel:${channelId} not deletable`);
       }
     }
 
-    const thread = ticket.forum_thread_id ? await this.client?.channels?.fetch(ticket.forum_thread_id).catch(() => null) : null;
-    if (thread?.deletable) {
-      await thread.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch(() => {});
+    if (thread) {
+      // Try to unlock/unarchive first in case forum moderation state blocks delete.
+      if (typeof thread.setArchived === "function") {
+        await thread.setArchived(false).catch(() => {});
+      }
+      if (typeof thread.setLocked === "function") {
+        await thread.setLocked(false).catch(() => {});
+      }
+
+      if (thread.deletable) {
+        const deletedThread = await thread.delete(`Ticket #${ticketId} fully deleted by ${actorId || "staff"}`).catch((error) => ({ __error: error }));
+        if (deletedThread?.__error) {
+          details.push(`forum-thread:${thread.id} ${deletedThread.__error?.message || "delete failed"}`);
+        }
+      } else {
+        details.push(`forum-thread:${thread.id} not deletable`);
+      }
     }
 
-    this.db.logEvent("ticket.deleted_entry", "ticket", ticketId, { actorId });
-    return { ok: true };
+    this.db.logEvent("ticket.deleted_entry", "ticket", ticketId, { actorId, details });
+    return { ok: true, details };
+  }
+
+  async deleteOldTicketEntries({ beforeTicketId = null, olderThanDays = null, limit = 100, actorId = null, dryRun = false } = {}) {
+    const predicates = [];
+    const params = [];
+
+    if (Number.isInteger(Number(beforeTicketId)) && Number(beforeTicketId) > 0) {
+      predicates.push("id < ?");
+      params.push(Number(beforeTicketId));
+    }
+
+    if (Number.isInteger(Number(olderThanDays)) && Number(olderThanDays) > 0) {
+      const cutoff = Date.now() - Number(olderThanDays) * 24 * 60 * 60 * 1000;
+      predicates.push("created_at <= ?");
+      params.push(cutoff);
+    }
+
+    if (predicates.length === 0) {
+      return { ok: false, reason: "Provide beforeTicketId and/or olderThanDays." };
+    }
+
+    const cleanLimit = Math.max(1, Math.min(1000, Number(limit) || 100));
+    const where = predicates.join(" AND ");
+    const rows = this.db
+      .getConnection()
+      .prepare(`SELECT id FROM tickets WHERE ${where} ORDER BY id ASC LIMIT ?`)
+      .all(...params, cleanLimit);
+    const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+
+    if (dryRun) {
+      return { ok: true, dryRun: true, matched: ids.length, ids };
+    }
+
+    let deleted = 0;
+    let failed = 0;
+    const errorDetails = [];
+    for (const id of ids) {
+      const result = await this.deleteTicketEntry(id, actorId);
+      if (result.ok) {
+        deleted += 1;
+      } else {
+        failed += 1;
+        if (errorDetails.length < 20) errorDetails.push(`ticket#${id}: ${result.reason}`);
+      }
+    }
+
+    return { ok: true, matched: ids.length, deleted, failed, errorDetails };
   }
 
   async createCarryLinkedTicket({ guildId, customer, carryType, tier, amount }) {
