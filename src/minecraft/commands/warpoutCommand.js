@@ -1,5 +1,21 @@
 const { delay } = require("../../contracts/helperFunctions.js");
 const minecraftCommand = require("../../contracts/minecraftCommand.js");
+const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
+const { getUUID } = require("../../contracts/API/mowojangAPI.js");
+
+function normalizeRank(rank) {
+  return String(rank || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function canUseWarpoutByRank(rank) {
+  const normalized = normalizeRank(rank);
+  return normalized === "guild master" || normalized === "slayer";
+}
+
 class warpoutCommand extends minecraftCommand {
   /** @param {import("minecraft-protocol").Client} minecraft */
   constructor(minecraft) {
@@ -16,6 +32,13 @@ class warpoutCommand extends minecraftCommand {
    * */
   async onCommand(player, message) {
     try {
+      const [invokerUuid, guild] = await Promise.all([getUUID(player), hypixel.getGuild("player", player, { noCaching: false }).catch(() => null)]);
+      const invokerMember = guild?.members?.find((member) => String(member.uuid || "").toLowerCase() === String(invokerUuid || "").toLowerCase());
+      const invokerRank = invokerMember?.rank || null;
+      if (!canUseWarpoutByRank(invokerRank)) {
+        return this.send("Only Guild Master or Slayer rank can use this command.");
+      }
+
       if (this.isOnCooldown) {
         return this.send(`${player} Command is on cooldown`);
       }
