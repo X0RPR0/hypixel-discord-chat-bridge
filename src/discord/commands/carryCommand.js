@@ -52,7 +52,15 @@ module.exports = {
       return interaction.editReply({
         embeds: [
           new SuccessEmbed(
-            `Carry #${created.carryId} queued.\nFinal: \`${coins(created.finalPrice)}\`\nETA: \`~${mins}m\`\nFree carry: \`${created.freeEligible ? `yes (${created.freeSource || "weekly"})` : "no"}\``
+            `Carry #${created.carryId} queued.\nFinal: \`${coins(created.finalPrice)}\`\nETA: \`~${mins}m\`\nFree carry: \`${
+              created.freeEligible
+                ? `yes (${created.freeSource || "weekly"})`
+                : created.freeBlockedByType
+                  ? "no (excluded: Kuudra/M7)"
+                  : created.freeBlockedByVerification
+                    ? "no (verification required)"
+                    : "no"
+            }\``
           )
         ]
       });
@@ -98,10 +106,11 @@ module.exports = {
 
     if (sub === "free") {
       const status = service.getFreeCarryStatus(interaction.user.id);
+      const verified = typeof service.isVerifiedForFreeCarry === "function" ? service.isVerifiedForFreeCarry(interaction.member, interaction.user.id) : false;
       return interaction.editReply({
         embeds: [
           new SuccessEmbed(
-            `Week: \`${status.weekKey}\`\nWeekly: \`${status.weeklyRemaining}/${status.limit}\`\nBonus: \`${status.bonusRemaining}\`\nTotal available: \`${status.totalRemaining}\``
+            `Week: \`${status.weekKey}\`\nVerified for free carry: \`${verified ? "yes" : "no"}\`\nWeekly: \`${status.weeklyRemaining}/${status.limit}\`\nBonus: \`${status.bonusRemaining}\`\nTotal available: \`${status.totalRemaining}\`\nExcluded from free: \`Kuudra, Dungeons M7\``
           )
         ]
       });
@@ -139,10 +148,11 @@ module.exports = {
             .addFields(
               { name: "/carry request <type> <tier> <amount>", value: "Create a carry request and join the queue." },
               { name: "/carry status [id]", value: "Show your latest carry or a specific one." },
-              { name: "/carry free", value: "Check weekly/bonus free carry availability." },
+              { name: "/carry free", value: "Check weekly/bonus free carry availability (verification required for free usage)." },
               { name: "/carry mycarries", value: "List your recent carries." },
               { name: "/carry help", value: "Show this help message." },
-              { name: "In-Game: !carry request <type> <amount>", value: "Create a carry request from Minecraft (linked Discord required)." }
+              { name: "In-Game: !carry request <type> <amount>", value: "Create a carry request from Minecraft (linked Discord required, free only if verified)." },
+              { name: "Free Carry Exclusions", value: "Kuudra and Dungeons M7 are always paid." }
             )
         ]
       });

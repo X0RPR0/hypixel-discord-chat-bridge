@@ -552,6 +552,23 @@ class CarryService {
     return this.getFreeCarryStatus(userId).eligible;
   }
 
+  isExcludedFromFreeCarry(carryType, tier) {
+    const type = String(carryType || "").toLowerCase().trim();
+    const normalizedTier = String(tier || "").toLowerCase().trim();
+    if (type === "kuudra") return true;
+    if (type === "dungeons" && normalizedTier === "m7") return true;
+    return false;
+  }
+
+  isVerifiedForFreeCarry(member, userId = null) {
+    if (userId && config.discord?.commands?.users?.includes(String(userId))) return true;
+    if (config.verification?.enabled === false) return true;
+    const verifiedRoleId = String(config.verification?.roles?.verified?.roleId || "").trim();
+    if (!verifiedRoleId) return false;
+    const roleIds = this.getMemberRoleIds(member);
+    return roleIds.includes(verifiedRoleId);
+  }
+
   consumeFreeCarry(userId) {
     const status = this.getFreeCarryStatus(userId);
     if (!status.eligible) {
@@ -764,7 +781,7 @@ class CarryService {
           .setColor(0x5865f2)
           .setTitle("Carry Request Dashboard")
           .setDescription(
-            "Select a carry from the dropdown, then enter amount.\nYou get a weekly free carry (default: 1/week UTC). Use **Check Free Carry** to view your status."
+            "Select a carry from the dropdown, then enter amount.\nFree carry is available only for verified users (default: 1/week UTC) and is excluded for **Kuudra** and **Dungeons M7**.\nUse **Check Free Carry** to view your status."
           )
       ],
       components: rows
@@ -965,7 +982,9 @@ class CarryService {
     });
 
     const freeStatus = !isPaid && !!customerUser?.id ? this.getFreeCarryStatus(customerUser.id) : null;
-    const freeEligible = !isPaid && !!freeStatus?.eligible;
+    const freeBlockedByType = this.isExcludedFromFreeCarry(normalizedType, normalizedTier);
+    const freeBlockedByVerification = !this.isVerifiedForFreeCarry(member, customerUser?.id || null);
+    const freeEligible = !isPaid && !!freeStatus?.eligible && !freeBlockedByType && !freeBlockedByVerification;
     const freeReduction = freeEligible ? Number(catalog.price) : 0;
     const selectedFreeSource = freeEligible ? freeStatus?.source || "weekly" : null;
 
@@ -1063,6 +1082,8 @@ class CarryService {
         discount,
         freeEligible,
         freeSource,
+        freeBlockedByType,
+        freeBlockedByVerification,
         totalDiscount,
         category: catalog.category
       };
@@ -2163,9 +2184,10 @@ class CarryService {
     if (parsed.action === "check_free") {
       const userId = interaction.user?.id;
       const status = this.getFreeCarryStatus(userId);
+      const verified = this.isVerifiedForFreeCarry(interaction.member, userId);
       await interaction.reply({
         ephemeral: true,
-        content: `Week: \`${status.weekKey}\`\nWeekly free carries: **${status.weeklyRemaining}/${status.limit}** remaining (${status.used} used).\nBonus credits: **${status.bonusRemaining}**\nTotal free carries available: **${status.totalRemaining}**`
+        content: `Week: \`${status.weekKey}\`\nVerified for free carry: **${verified ? "Yes" : "No"}**\nWeekly free carries: **${status.weeklyRemaining}/${status.limit}** remaining (${status.used} used).\nBonus credits: **${status.bonusRemaining}**\nTotal free carries available: **${status.totalRemaining}**\nNote: Free carry is excluded for **Kuudra** and **Dungeons M7**.`
       });
       return true;
     }
@@ -2508,7 +2530,17 @@ class CarryService {
               { name: "Discount", value: `${this.formatCoinsShort(created.totalDiscount)}`, inline: true },
               { name: "Final", value: `${this.formatCoinsShort(created.finalPrice)}`, inline: true },
               { name: "ETA", value: `~${mins} min`, inline: true },
-              { name: "Free Carry", value: created.freeEligible ? `Applied (${created.freeSource || "weekly"})` : "Not available", inline: true }
+              {
+                name: "Free Carry",
+                value: created.freeEligible
+                  ? `Applied (${created.freeSource || "weekly"})`
+                  : created.freeBlockedByType
+                    ? "Not available for Kuudra/M7"
+                    : created.freeBlockedByVerification
+                      ? "Requires verified account"
+                      : "Not available",
+                inline: true
+              }
             )
         ]
       });

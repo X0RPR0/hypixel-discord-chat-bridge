@@ -12,7 +12,8 @@ WORKDIR /usr/src/app
 
 # install dependencies
 COPY --chown=node:node package.json package-lock.json /usr/src/app/
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund \
+  && chown -R node:node /usr/src/app/node_modules
 
 # copy app sources (kept after dependency layer for fast rebuilds)
 COPY --chown=node:node . /usr/src/app
