@@ -23,7 +23,12 @@ function createElectionData(overrides = {}) {
       }
     },
     current: {
-      year: 500
+      year: 501,
+      candidates: [
+        { name: "Finnegan", votes: 6000 },
+        { name: "Paul", votes: 3000 },
+        { name: "Diaz", votes: 1000 }
+      ]
     },
     ...overrides
   };
@@ -37,7 +42,8 @@ describe("mayor command", () => {
   test("election field sorts candidates and includes progress bar", () => {
     const field = command._private.buildElectionField(createElectionData());
     expect(field.name).toContain("Current Election");
-    expect(field.value.indexOf("Marina")).toBeLessThan(field.value.indexOf("Aatrox"));
+    expect(field.value.indexOf("Finnegan")).toBeLessThan(field.value.indexOf("Paul"));
+    expect(field.value).not.toContain("Marina");
     expect(field.value).toContain("[");
     expect(field.value).toContain("#");
   });
@@ -45,8 +51,23 @@ describe("mayor command", () => {
   test("shows scheduled events for marina", () => {
     const section = command._private.formatMayorEventSection(createElectionData().mayor, Date.now());
     expect(section).toContain("Next Event:");
-    expect(section).toContain("Event 1:");
+    expect(section).toContain("Festival 1:");
+    expect(section).toContain("Festival 12:");
     expect(section).toContain("<t:");
+  });
+
+  test("cole schedule has exactly five fiestas", () => {
+    const section = command._private.formatMayorEventSection(
+      {
+        name: "Cole",
+        perks: [{ name: "Mining Fiesta" }]
+      },
+      Date.now()
+    );
+
+    expect(section).toContain("Fiesta 1:");
+    expect(section).toContain("Fiesta 5:");
+    expect(section).not.toContain("Fiesta 6:");
   });
 
   test("hides event section for unrelated mayor perks", () => {

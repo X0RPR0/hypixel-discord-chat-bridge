@@ -5,9 +5,9 @@ const { dayMs, monthMs, yearMs, yearZero } = require("../../../API/constants/cal
 
 const BUTTON_TIMEOUT_MS = 120000;
 const BAR_WIDTH = 20;
-const FISHING_FESTIVAL_MONTH_DAY_OFFSETS = [0, 1, 2];
 const COLE_MONTH_INDEXES = [4, 5, 6, 7, 8];
 const MAYOR_DYNAMIC_SCHEDULE_PERKS = new Set(["Extra Event", "Perkpocalypse"]);
+const MAYOR_TERM_START_OFFSET_MS = 2 * monthMs + 26 * dayMs; // Late Spring 27
 
 function getSkyblockYear(timeMs) {
   return Math.floor((timeMs - yearZero) / yearMs) + 1;
@@ -63,52 +63,55 @@ function mapCandidates(candidates) {
   });
 }
 
-function findUpcomingMarinaEvents(nowMs, take = 2) {
-  const starts = [];
-  let year = getSkyblockYear(nowMs);
-
-  while (starts.length < take) {
-    const yearStart = getSkyblockYearStart(year);
-    for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
-      for (const dayOffset of FISHING_FESTIVAL_MONTH_DAY_OFFSETS) {
-        const start = yearStart + monthIndex * monthMs + dayOffset * dayMs;
-        if (start >= nowMs) {
-          starts.push({ type: "Fishing Festival", timestamp: start });
-          if (starts.length >= take) {
-            break;
-          }
-        }
-      }
-
-      if (starts.length >= take) {
-        break;
-      }
-    }
-    year += 1;
-  }
-
-  return starts.sort((a, b) => a.timestamp - b.timestamp).slice(0, take);
+function getMayorTermBounds(mayor, nowMs) {
+  const electionYear = Number(mayor?.election?.year);
+  const startYear = Number.isFinite(electionYear) && electionYear > 0 ? electionYear + 1 : getSkyblockYear(nowMs);
+  const termStart = getSkyblockYearStart(startYear) + MAYOR_TERM_START_OFFSET_MS;
+  const termEnd = termStart + yearMs;
+  return { termStart, termEnd };
 }
 
-function findUpcomingColeEvents(nowMs, take = 2) {
-  const starts = [];
-  let year = getSkyblockYear(nowMs);
+function buildMarinaTermSchedule(mayor, nowMs) {
+  const { termStart, termEnd } = getMayorTermBounds(mayor, nowMs);
+  const events = [];
 
-  while (starts.length < take) {
+  const startYear = getSkyblockYear(termStart);
+  const endYear = getSkyblockYear(termEnd);
+
+  for (let year = startYear; year <= endYear; year++) {
     const yearStart = getSkyblockYearStart(year);
-    for (const monthIndex of COLE_MONTH_INDEXES) {
+    for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
       const start = yearStart + monthIndex * monthMs;
-      if (start >= nowMs) {
-        starts.push({ type: "Mining Fiesta", timestamp: start });
-        if (starts.length >= take) {
-          break;
-        }
+      if (start >= termStart && start < termEnd) {
+        events.push({
+          type: "Fishing Festival",
+          label: "Festival",
+          timestamp: start
+        });
       }
     }
-    year += 1;
   }
 
-  return starts.sort((a, b) => a.timestamp - b.timestamp).slice(0, take);
+  return events.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function buildColeTermSchedule(mayor, nowMs) {
+  const { termStart, termEnd } = getMayorTermBounds(mayor, nowMs);
+  const yearStart = getSkyblockYearStart(getSkyblockYear(termStart));
+  const events = [];
+
+  for (const monthIndex of COLE_MONTH_INDEXES) {
+    const start = yearStart + monthIndex * monthMs;
+    if (start >= termStart && start < termEnd) {
+      events.push({
+        type: "Mining Fiesta",
+        label: "Fiesta",
+        timestamp: start
+      });
+    }
+  }
+
+  return events.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 function resolveScheduledMayorEvents(mayor, nowMs) {
@@ -118,11 +121,11 @@ function resolveScheduledMayorEvents(mayor, nowMs) {
   const notes = [];
 
   if (perkNames.includes("Fishing Festival")) {
-    eventEntries.push(...findUpcomingMarinaEvents(nowMs, 2));
+    eventEntries.push(...buildMarinaTermSchedule(mayor, nowMs));
   }
 
   if (perkNames.includes("Mining Fiesta")) {
-    eventEntries.push(...findUpcomingColeEvents(nowMs, 2));
+    eventEntries.push(...buildColeTermSchedule(mayor, nowMs));
   }
 
   const dynamic = perkNames.filter((name) => MAYOR_DYNAMIC_SCHEDULE_PERKS.has(name));
@@ -130,28 +133,39 @@ function resolveScheduledMayorEvents(mayor, nowMs) {
     notes.push(`Dynamic perk schedule unavailable from API/math alone: ${dynamic.join(", ")}`);
   }
 
-  const sorted = eventEntries.sort((a, b) => a.timestamp - b.timestamp).slice(0, 2);
+  const sorted = eventEntries
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map((event, index) => ({
+      ...event,
+      index: index + 1
+    }));
+
+  let nextEvent = sorted.find((event) => event.timestamp >= nowMs);
 
   return {
     events: sorted,
-    notes
+    notes,
+    nextEvent
   };
 }
 
 function formatMayorEventSection(mayor, nowMs) {
   const resolved = resolveScheduledMayorEvents(mayor, nowMs);
-  if (resolved.events.length === 0 && resolved.notes.length === 0) {
+  if (resolved.events.length === 0 && resolved.notes.length === 0 && !resolved.nextEvent) {
     return null;
   }
 
   const lines = [];
-  const [event1, event2] = resolved.events;
-  if (event1) {
-    lines.push(`Next Event: <t:${Math.floor(event1.timestamp / 1000)}:F> (in <t:${Math.floor(event1.timestamp / 1000)}:R>)`);
-    lines.push(`Event 1: <t:${Math.floor(event1.timestamp / 1000)}:F> (${event1.type})`);
+  if (resolved.nextEvent) {
+    lines.push(
+      `Next Event: ${resolved.nextEvent.label} ${resolved.nextEvent.index} - <t:${Math.floor(resolved.nextEvent.timestamp / 1000)}:F> (in <t:${Math.floor(
+        resolved.nextEvent.timestamp / 1000
+      )}:R>)`
+    );
   }
-  if (event2) {
-    lines.push(`Event 2: <t:${Math.floor(event2.timestamp / 1000)}:F> (${event2.type})`);
+
+  for (const event of resolved.events) {
+    lines.push(`${event.label} ${event.index}: <t:${Math.floor(event.timestamp / 1000)}:F> (${event.type})`);
   }
 
   for (const note of resolved.notes) {
@@ -202,21 +216,25 @@ function buildNextSpecialMayorField(nowMs) {
 }
 
 function buildElectionField(data) {
-  const election = data?.mayor?.election;
-  if (!election || !Array.isArray(election.candidates) || election.candidates.length === 0) {
+  const currentElection = data?.current;
+  const fallbackElection = data?.mayor?.election;
+  const candidates = Array.isArray(currentElection?.candidates) && currentElection.candidates.length > 0 ? currentElection.candidates : fallbackElection?.candidates;
+  const electionYear = currentElection?.year || fallbackElection?.year || "Unknown";
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
     return {
       name: "Current Election",
       value: "No active candidates available."
     };
   }
 
-  const lines = mapCandidates(election.candidates).map(
+  const lines = mapCandidates(candidates).map(
     (candidate) =>
       `**${candidate.name}** - \`${candidate.votes.toLocaleString()}\` votes (${candidate.percentage.toFixed(2)}%)\n${buildProgressBar(candidate.percentage)}`
   );
 
   return {
-    name: `Current Election (Year ${election.year || "Unknown"})`,
+    name: `Current Election (Year ${electionYear})`,
     value: lines.join("\n")
   };
 }
@@ -296,6 +314,8 @@ module.exports = {
     mapCandidates,
     getNextSpecialMayor,
     resolveScheduledMayorEvents,
+    buildMarinaTermSchedule,
+    buildColeTermSchedule,
     formatMayorEventSection,
     buildElectionField,
     buildEmbedForMode
