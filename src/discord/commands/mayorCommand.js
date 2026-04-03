@@ -40,11 +40,29 @@ function getNextSpecialMayor(nowMs) {
   };
 }
 
+function getUpcomingSpecialMayors(nowMs, count = 3) {
+  const specials = [];
+  let year = getSkyblockYear(nowMs) + 1;
+
+  while (specials.length < count) {
+    if (year % 8 === 0) {
+      specials.push({
+        mayor: getSpecialMayorForYear(year),
+        year,
+        timestamp: getSkyblockYearStart(year) + MAYOR_TERM_START_OFFSET_MS
+      });
+    }
+    year += 1;
+  }
+
+  return specials;
+}
+
 function buildProgressBar(percentage) {
   const clamped = Math.max(0, Math.min(100, percentage));
   const filled = Math.round((clamped / 100) * BAR_WIDTH);
   const empty = Math.max(0, BAR_WIDTH - filled);
-  return `[${"#".repeat(filled)}${"-".repeat(empty)}]`;
+  return `${"█".repeat(filled)}${"░".repeat(empty)}`;
 }
 
 function mapCandidates(candidates) {
@@ -158,17 +176,19 @@ function formatMayorEventSection(mayor, nowMs) {
   const lines = [];
   if (resolved.nextEvent) {
     lines.push(
-      `Next Event: ${resolved.nextEvent.label} ${resolved.nextEvent.index} - <t:${Math.floor(resolved.nextEvent.timestamp / 1000)}:F> (in <t:${Math.floor(
+      `**Next Event:** ${resolved.nextEvent.label} ${resolved.nextEvent.index} - <t:${Math.floor(resolved.nextEvent.timestamp / 1000)}:F> (in <t:${Math.floor(
         resolved.nextEvent.timestamp / 1000
       )}:R>)`
     );
+    lines.push("");
   }
 
   for (const event of resolved.events) {
-    lines.push(`${event.label} ${event.index}: <t:${Math.floor(event.timestamp / 1000)}:F> (${event.type})`);
+    lines.push(`• **${event.label} ${event.index}:** <t:${Math.floor(event.timestamp / 1000)}:F>`);
   }
 
   for (const note of resolved.notes) {
+    lines.push("");
     lines.push(note);
   }
 
@@ -178,27 +198,31 @@ function formatMayorEventSection(mayor, nowMs) {
 function buildMayorBaseEmbed(data, nowMs) {
   const mayor = data?.mayor || {};
   const mayorPerks = Array.isArray(mayor.perks) ? mayor.perks.map((perk) => perk.name).join(", ") : "Unknown";
+  const ministerName = mayor?.minister?.name || "None";
   const ministerPerk = mayor?.minister?.perk?.name || "None";
   const eventSection = formatMayorEventSection(mayor, nowMs);
 
   const embed = new Embed()
-    .setTitle(`SkyBlock Mayor: ${mayor.name || "Unknown"}`)
-    .setDescription(`Current Year: \`${data?.current?.year || "Unknown"}\``)
+    .setTitle(`🏛️ SkyBlock Mayor: ${mayor.name || "Unknown"}`)
+    .setDescription(`Season Year: \`${data?.current?.year || "Unknown"}\``)
     .addFields(
       {
-        name: "Perks",
-        value: mayorPerks || "None"
+        name: "✨ Perks",
+        value: mayorPerks || "None",
+        inline: false
       },
       {
-        name: "Minister Perk",
-        value: ministerPerk
+        name: "🧑‍💼 Minister",
+        value: `**Name:** \`${ministerName}\`\n**Perk:** \`${ministerPerk}\``,
+        inline: false
       }
     );
 
   if (eventSection) {
     embed.addFields({
-      name: "Scheduled Events",
-      value: eventSection
+      name: "📅 Scheduled Events",
+      value: eventSection,
+      inline: false
     });
   }
 
@@ -206,12 +230,22 @@ function buildMayorBaseEmbed(data, nowMs) {
 }
 
 function buildNextSpecialMayorField(nowMs) {
-  const info = getNextSpecialMayor(nowMs);
+  const upcoming = getUpcomingSpecialMayors(nowMs, 3);
+  const next = upcoming[0];
+  const lines = [];
+
+  if (next) {
+    lines.push(`**Next:** \`${next.mayor}\``);
+    lines.push("");
+  }
+
+  for (const item of upcoming) {
+    lines.push(`• **${item.mayor}:** <t:${Math.floor(item.timestamp / 1000)}:F> (<t:${Math.floor(item.timestamp / 1000)}:R>)`);
+  }
+
   return {
-    name: "Next Special Mayor",
-    value: `Mayor: \`${info.mayor}\`\nSkyBlock Year: \`${info.year}\`\nExpected At: <t:${Math.floor(info.timestamp / 1000)}:F> (<t:${Math.floor(
-      info.timestamp / 1000
-    )}:R>)`
+    name: "🔮 Special Mayor Schedule",
+    value: lines.join("\n")
   };
 }
 
@@ -230,33 +264,49 @@ function buildElectionField(data) {
 
   const lines = mapCandidates(candidates).map(
     (candidate) =>
-      `**${candidate.name}** - \`${candidate.votes.toLocaleString()}\` votes (${candidate.percentage.toFixed(2)}%)\n${buildProgressBar(candidate.percentage)}`
+      `**${candidate.name}**  •  \`${candidate.votes.toLocaleString()}\` votes  •  \`${candidate.percentage.toFixed(2)}%\`\n${buildProgressBar(candidate.percentage)}`
   );
 
   return {
-    name: `Current Election (Year ${electionYear})`,
+    name: `🗳️ Current Election (Year ${electionYear})`,
     value: lines.join("\n")
   };
 }
 
 function buildButtons(interactionId, disabled = false) {
+  return buildButtonsForMode("base", interactionId, disabled);
+}
+
+function buildButtonsForMode(mode, interactionId, disabled = false) {
+  const mainStyle = mode === "base" ? ButtonStyle.Primary : ButtonStyle.Secondary;
+  const specialStyle = mode === "next_special" ? ButtonStyle.Primary : ButtonStyle.Secondary;
+  const electionStyle = mode === "election" ? ButtonStyle.Primary : ButtonStyle.Secondary;
+
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`mayor:next_special:${interactionId}`).setLabel("Next Special Mayor").setStyle(ButtonStyle.Secondary).setDisabled(disabled),
-      new ButtonBuilder().setCustomId(`mayor:election:${interactionId}`).setLabel("Current Election").setStyle(ButtonStyle.Primary).setDisabled(disabled)
+      new ButtonBuilder().setCustomId(`mayor:main:${interactionId}`).setLabel("Overview").setStyle(mainStyle).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`mayor:next_special:${interactionId}`).setLabel("Specials").setStyle(specialStyle).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`mayor:election:${interactionId}`).setLabel("Election").setStyle(electionStyle).setDisabled(disabled)
     )
   ];
 }
 
 function buildEmbedForMode(mode, data, nowMs) {
-  const embed = buildMayorBaseEmbed(data, nowMs);
   if (mode === "next_special") {
-    embed.addFields(buildNextSpecialMayorField(nowMs));
+    return new Embed()
+      .setTitle("🔮 SkyBlock Special Mayors")
+      .setDescription(`Season Year: \`${data?.current?.year || "Unknown"}\``)
+      .addFields(buildNextSpecialMayorField(nowMs));
   }
+
   if (mode === "election") {
-    embed.addFields(buildElectionField(data));
+    return new Embed()
+      .setTitle("🗳️ SkyBlock Election Board")
+      .setDescription(`Season Year: \`${data?.current?.year || "Unknown"}\``)
+      .addFields(buildElectionField(data));
   }
-  return embed;
+
+  return buildMayorBaseEmbed(data, nowMs);
 }
 
 module.exports = {
@@ -270,7 +320,7 @@ module.exports = {
     const electionData = response.data;
     const nowMs = Date.now();
     const baseEmbed = buildEmbedForMode("base", electionData, nowMs);
-    const components = buildButtons(interaction.id, false);
+    const components = buildButtonsForMode("base", interaction.id, false);
     const reply = await interaction.editReply({ embeds: [baseEmbed], components });
 
     if (!reply || typeof reply.createMessageComponentCollector !== "function") {
@@ -288,6 +338,9 @@ module.exports = {
       }
 
       let mode = "base";
+      if (buttonInteraction.customId === `mayor:main:${interaction.id}`) {
+        mode = "base";
+      }
       if (buttonInteraction.customId === `mayor:next_special:${interaction.id}`) {
         mode = "next_special";
       }
@@ -298,13 +351,13 @@ module.exports = {
       const refreshed = await get("https://api.hypixel.net/v2/resources/skyblock/election");
       const refreshedData = refreshed?.data?.success ? refreshed.data : electionData;
       const embed = buildEmbedForMode(mode, refreshedData, Date.now());
-      await buttonInteraction.update({ embeds: [embed], components: buildButtons(interaction.id, false) });
+      await buttonInteraction.update({ embeds: [embed], components: buildButtonsForMode(mode, interaction.id, false) });
     });
 
     collector.on("end", async () => {
       await interaction
         .editReply({
-          components: buildButtons(interaction.id, true)
+          components: buildButtonsForMode("base", interaction.id, true)
         })
         .catch(() => {});
     });
@@ -313,6 +366,7 @@ module.exports = {
     buildProgressBar,
     mapCandidates,
     getNextSpecialMayor,
+    getUpcomingSpecialMayors,
     resolveScheduledMayorEvents,
     buildMarinaTermSchedule,
     buildColeTermSchedule,

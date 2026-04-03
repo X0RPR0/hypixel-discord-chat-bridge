@@ -44,8 +44,8 @@ describe("mayor command", () => {
     expect(field.name).toContain("Current Election");
     expect(field.value.indexOf("Finnegan")).toBeLessThan(field.value.indexOf("Paul"));
     expect(field.value).not.toContain("Marina");
-    expect(field.value).toContain("[");
-    expect(field.value).toContain("#");
+    expect(field.value).toContain("█");
+    expect(field.value).toContain("░");
   });
 
   test("shows scheduled events for marina", () => {
