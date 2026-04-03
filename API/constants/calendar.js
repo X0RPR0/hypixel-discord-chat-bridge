@@ -307,9 +307,12 @@ function buildSkyblockCalendar(events, from, to, years, stopAtYearEnd = true) {
 
         const msTill = times.end < currentOffset ? yearMs - currentOffset + times.start : times.start - currentOffset;
 
+        const startTimestamp = fromDate + msTill;
+        const endTimestamp = startTimestamp + duration;
+
         const o = {
-          start_timestamp: (Math.round(fromDate / 1000) + Math.round(msTill / 1000)) * 1000,
-          end_timestamp: (Math.round(fromDate / 1000) + Math.round((msTill + duration) / 1000)) * 1000,
+          start_timestamp: startTimestamp,
+          end_timestamp: endTimestamp,
           starting_in: msTill,
           ending_in: msTill + duration
         };
@@ -365,5 +368,15 @@ function buildSkyblockEvents() {
 
 module.exports = {
   buildSkyblockCalendar,
-  buildSkyblockEvents
+  buildSkyblockEvents,
+  months,
+  hourMs,
+  dayMs,
+  monthLength,
+  yearLength,
+  monthMs,
+  yearMs,
+  yearZero,
+  getOffset,
+  timeToSkyblockYear
 };
