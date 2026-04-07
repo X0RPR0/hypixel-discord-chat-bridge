@@ -199,7 +199,13 @@ class CarrySetupService {
 
     if (viewKey === "prices") {
       const categoryRows = byCategory.get(meta.category) || [];
-      const tierRows = categoryRows.map((r) => ({ type: String(r.carry_type), tier: String(r.tier), price: Number(r.price || 0), enabled: Number(r.enabled || 0) === 1 }));
+      const typeOptions = [...new Set(categoryRows.map((r) => String(r.carry_type)))];
+      if (typeOptions.length > 0 && !typeOptions.includes(meta.type)) {
+        meta.type = typeOptions[0];
+      }
+      const tierRows = categoryRows
+        .filter((r) => String(r.carry_type) === String(meta.type))
+        .map((r) => ({ type: String(r.carry_type), tier: String(r.tier), price: Number(r.price || 0), enabled: Number(r.enabled || 0) === 1 }));
       const selectedTierRow = tierRows.find((r) => r.tier === meta.tier) || tierRows[0] || null;
       if (selectedTierRow) {
         meta.type = selectedTierRow.type;
@@ -222,6 +228,21 @@ class CarrySetupService {
             .addOptions(this.withFallbackOptions(categories.slice(0, 25).map((c) => ({ label: c, value: c, default: c === meta.category })), "No categories"))
         )
       );
+      if (typeOptions.length > 1) {
+        topRows.push(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${SETUP_PREFIX}price_type`)
+              .setPlaceholder("Choose type")
+              .addOptions(
+                this.withFallbackOptions(
+                  typeOptions.slice(0, 25).map((type) => ({ label: type, value: type, default: type === meta.type })),
+                  "No types"
+                )
+              )
+          )
+        );
+      }
       const groupRows = (label, list) => {
         if (!list.length) return;
         sections.push({ title: label, lines: [`- ${list.map((r) => r.tier.toUpperCase()).join(", ")}`] });
