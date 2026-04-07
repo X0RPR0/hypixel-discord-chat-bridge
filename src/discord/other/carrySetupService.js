@@ -150,14 +150,14 @@ class CarrySetupService {
 
     const topRows = [
       new ActionRowBuilder().addComponents(
-        actionButton(`${SETUP_PREFIX}view:overview`, "Overview", viewKey === "overview" ? 1 : 2, { emoji: "ðŸ§­", disabled: viewKey === "overview" }),
-        actionButton(`${SETUP_PREFIX}view:channels`, "Channels", viewKey === "channels" ? 1 : 2, { emoji: "ðŸ“", disabled: viewKey === "channels" }),
-        actionButton(`${SETUP_PREFIX}view:prices`, "Prices", viewKey === "prices" ? 1 : 2, { emoji: "ðŸ’°", disabled: viewKey === "prices" }),
-        actionButton(`${SETUP_PREFIX}view:queue`, "Queue", viewKey === "queue" ? 1 : 2, { emoji: "ðŸ“¦", disabled: viewKey === "queue" }),
-        actionButton(`${SETUP_PREFIX}view:discounts`, "Discounts", viewKey === "discounts" ? 1 : 2, { emoji: "ðŸ§®", disabled: viewKey === "discounts" })
+        actionButton(`${SETUP_PREFIX}view:overview`, "Overview", viewKey === "overview" ? 1 : 2, { disabled: viewKey === "overview" }),
+        actionButton(`${SETUP_PREFIX}view:channels`, "Channels", viewKey === "channels" ? 1 : 2, { disabled: viewKey === "channels" }),
+        actionButton(`${SETUP_PREFIX}view:prices`, "Prices", viewKey === "prices" ? 1 : 2, { disabled: viewKey === "prices" }),
+        actionButton(`${SETUP_PREFIX}view:queue`, "Queue", viewKey === "queue" ? 1 : 2, { disabled: viewKey === "queue" }),
+        actionButton(`${SETUP_PREFIX}view:discounts`, "Discounts", viewKey === "discounts" ? 1 : 2, { disabled: viewKey === "discounts" })
       )
     ];
-    const actions = [actionButton(`${SETUP_PREFIX}refresh`, "Refresh", 2, { emoji: "ðŸ”„" })];
+    const actions = [actionButton(`${SETUP_PREFIX}refresh`, "Refresh", 2)];
     const extraRows = [];
 
     if (viewKey === "overview") {
@@ -194,7 +194,7 @@ class CarrySetupService {
           new ChannelSelectMenuBuilder().setCustomId(`${SETUP_PREFIX}channel_pick`).setPlaceholder("2) Pick channel").setChannelTypes(this.channelTypesForSetting(meta.setting))
         )
       );
-      actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2, { emoji: "ðŸ“¡" }));
+      actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2));
     }
 
     if (viewKey === "prices") {
@@ -246,7 +246,7 @@ class CarrySetupService {
       } else {
         groupRows("Tiers", tierRows);
       }
-      actions.push(actionButton(`${SETUP_PREFIX}price_set`, "Set Price", 1, { emoji: "ðŸ’°" }));
+      actions.push(actionButton(`${SETUP_PREFIX}price_set`, "Set Price", 1));
     }
 
     if (viewKey === "queue") {
@@ -264,14 +264,14 @@ class CarrySetupService {
         ]
       });
       actions.push(
-        actionButton(`${SETUP_PREFIX}set_service_team_role`, "Service-Team", 1, { emoji: "🛠️" }),
-        actionButton(`${SETUP_PREFIX}set_service_admin_role`, "Service-Admin", 1, { emoji: "👑" }),
-        actionButton(`${SETUP_PREFIX}set_autodelete`, "AutoDelete", 1, { emoji: "â±ï¸" }),
-        actionButton(`${SETUP_PREFIX}set_free_limit`, "Free Limit", 1, { emoji: "ðŸ†“" }),
-        actionButton(`${SETUP_PREFIX}set_role_priority`, "Role Priority", 1, { emoji: "ðŸŽšï¸" }),
-        actionButton(`${SETUP_PREFIX}toggle_transcript`, transcriptEnabled ? "Transcript On" : "Transcript Off", transcriptEnabled ? 3 : 4, { emoji: "ðŸ§¾" }),
-        actionButton(`${SETUP_PREFIX}queue_toggle`, queueEnabled ? "Queue On" : "Queue Off", queueEnabled ? 3 : 4, { emoji: queueEnabled ? "â–¶ï¸" : "â¸ï¸" }),
-        actionButton(`${SETUP_PREFIX}queue_reset`, "Queue Reset", 4, { emoji: "ðŸ§¹" })
+        actionButton(`${SETUP_PREFIX}set_service_team_role`, "Service-Team", 1),
+        actionButton(`${SETUP_PREFIX}set_service_admin_role`, "Service-Admin", 1),
+        actionButton(`${SETUP_PREFIX}set_autodelete`, "AutoDelete", 1),
+        actionButton(`${SETUP_PREFIX}set_free_limit`, "Free Limit", 1),
+        actionButton(`${SETUP_PREFIX}set_role_priority`, "Role Priority", 1),
+        actionButton(`${SETUP_PREFIX}toggle_transcript`, transcriptEnabled ? "Transcript On" : "Transcript Off", transcriptEnabled ? 3 : 4),
+        actionButton(`${SETUP_PREFIX}queue_toggle`, queueEnabled ? "Queue On" : "Queue Off", queueEnabled ? 3 : 4),
+        actionButton(`${SETUP_PREFIX}queue_reset`, "Queue Reset", 4)
       );
     }
 
@@ -288,14 +288,14 @@ class CarrySetupService {
         ]
       });
       actions.push(
-        actionButton(`${SETUP_PREFIX}discount_static_add`, "Add Static", 1, { emoji: "âž•" }),
-        actionButton(`${SETUP_PREFIX}discount_static_remove`, "Remove Static", 4, { emoji: "âž–" }),
-        actionButton(`${SETUP_PREFIX}discount_timed_global`, "Timed Global", 1, { emoji: "â³" }),
-        actionButton(`${SETUP_PREFIX}discount_toggle_stacking`, "Toggle Stacking", 2, { emoji: "ðŸ§©" })
+        actionButton(`${SETUP_PREFIX}discount_static_add`, "Add Static", 1),
+        actionButton(`${SETUP_PREFIX}discount_static_remove`, "Remove Static", 4),
+        actionButton(`${SETUP_PREFIX}discount_timed_global`, "Timed Global", 1),
+        actionButton(`${SETUP_PREFIX}discount_toggle_stacking`, "Toggle Stacking", 2)
       );
     }
 
-    if (viewKey === "overview") actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2, { emoji: "ðŸ“¡" }));
+    if (viewKey === "overview") actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2));
 
     return panelPayload(makePanel({ title: "Carry / Ticket Setup Dashboard", status: `View: ${viewKey}`, sections, topRows, actions, extraRows, accentColor: 0x5865f2, footer: "Interactive setup panel - Components V2" }));
   }
@@ -475,7 +475,7 @@ class CarrySetupService {
       }
       return false;
     } catch (error) {
-      console.error("carry-setup component error", error);
+      console.error(`carry-setup component error: ${error?.stack || error?.message || String(error)}`);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply(infoPayload({ title: "Setup Error", lines: ["Action failed. Please try again."], ephemeral: true })).catch(() => {});
       }
@@ -592,7 +592,7 @@ class CarrySetupService {
 
       return false;
     } catch (error) {
-      console.error("carry-setup modal error", error);
+      console.error(`carry-setup modal error: ${error?.stack || error?.message || String(error)}`);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply(infoPayload({ title: "Setup Error", lines: ["Modal action failed. Please try again."], ephemeral: true })).catch(() => {});
       }
@@ -602,3 +602,4 @@ class CarrySetupService {
 }
 
 module.exports = { CarrySetupService, SETUP_PREFIX, SETUP_MODAL_PREFIX };
+
