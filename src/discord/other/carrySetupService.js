@@ -168,7 +168,6 @@ class CarrySetupService {
           `- Ticket Dashboard: ${this.ticketService.getTicketDashboardChannelId() ? `<#${this.ticketService.getTicketDashboardChannelId()}>` : "not set"}`,
           `- Carry Dashboard: ${this.carryService.getCarryDashboardChannelId() ? `<#${this.carryService.getCarryDashboardChannelId()}>` : "not set"}`,
           `- Carry Category: ${this.carryService.getCarryCategoryId() ? `<#${this.carryService.getCarryCategoryId()}>` : "not set"}`,
-          `- Carrier Role: ${this.carryService.getCarrierClaimRoleId() ? `<@&${this.carryService.getCarrierClaimRoleId()}>` : "not set"}`,
           `- Service-Team Role: ${this.carryService.getServiceTeamRoleId() ? `<@&${this.carryService.getServiceTeamRoleId()}>` : "not set"}`,
           `- Service-Admin Role: ${this.carryService.getServiceAdminRoleId() ? `<@&${this.carryService.getServiceAdminRoleId()}>` : "not set"}`
         ]
@@ -265,9 +264,8 @@ class CarrySetupService {
         ]
       });
       actions.push(
-        actionButton(`${SETUP_PREFIX}set_role`, "Carrier Role", 1, { emoji: "ðŸ§‘â€âœˆï¸" }),
-        actionButton(`${SETUP_PREFIX}set_service_team_role`, "Service-Team", 1),
-        actionButton(`${SETUP_PREFIX}set_service_admin_role`, "Service-Admin", 1),
+        actionButton(`${SETUP_PREFIX}set_service_team_role`, "Service-Team", 1, { emoji: "🛠️" }),
+        actionButton(`${SETUP_PREFIX}set_service_admin_role`, "Service-Admin", 1, { emoji: "👑" }),
         actionButton(`${SETUP_PREFIX}set_autodelete`, "AutoDelete", 1, { emoji: "â±ï¸" }),
         actionButton(`${SETUP_PREFIX}set_free_limit`, "Free Limit", 1, { emoji: "ðŸ†“" }),
         actionButton(`${SETUP_PREFIX}set_role_priority`, "Role Priority", 1, { emoji: "ðŸŽšï¸" }),
@@ -461,7 +459,7 @@ class CarrySetupService {
       return true;
     }
       if (
-        ["set_autodelete", "set_role", "set_service_team_role", "set_service_admin_role", "set_free_limit", "set_role_priority", "discount_static_add", "discount_static_remove", "discount_timed_global"].includes(
+        ["set_autodelete", "set_service_team_role", "set_service_admin_role", "set_free_limit", "set_role_priority", "discount_static_add", "discount_static_remove", "discount_timed_global"].includes(
           payload
         )
       ) {
@@ -471,7 +469,7 @@ class CarrySetupService {
         else if (payload === "discount_static_add") modal.addComponents(add("amount", "Min Amount"), add("percentage", "Percentage (0-95)"));
         else if (payload === "discount_static_remove") modal.addComponents(add("amount", "Min Amount"));
         else if (payload === "discount_timed_global") modal.addComponents(add("percentage", "Percentage (0-95)"), add("duration", "Duration (e.g. 3h)"));
-        else modal.addComponents(add("value", payload === "set_autodelete" ? "Duration (e.g. 30m)" : ["set_role", "set_service_team_role", "set_service_admin_role"].includes(payload) ? "Role ID or mention" : "Weekly limit"));
+        else modal.addComponents(add("value", payload === "set_autodelete" ? "Duration (e.g. 30m)" : ["set_service_team_role", "set_service_admin_role"].includes(payload) ? "Role ID or mention" : "Weekly limit"));
         await interaction.showModal(modal);
         return true;
       }
@@ -529,14 +527,6 @@ class CarrySetupService {
       if (!parsed || parsed <= 0) return interaction.reply(infoPayload({ title: "Invalid Duration", lines: ["Use values like 30m or 2h."], ephemeral: true }));
       this.carryService.setCarryAutoDelete(parsed);
       await interaction.reply(infoPayload({ title: "AutoDelete Updated", lines: [`New delay: ${ms(parsed)}`], ephemeral: true }));
-      return true;
-    }
-
-    if (action === "set_role") {
-      const roleId = String(interaction.fields.getTextInputValue("value") || "").trim().replace(/[<@&>]/g, "");
-      if (!/^\d{17,20}$/.test(roleId)) return interaction.reply(infoPayload({ title: "Invalid Role", lines: ["Provide a role mention or role id."], ephemeral: true }));
-      this.carryService.setCarrierClaimRoleId(roleId);
-      await interaction.reply(infoPayload({ title: "Role Updated", lines: [`Carrier role set to <@&${roleId}>.`], ephemeral: true }));
       return true;
     }
 
