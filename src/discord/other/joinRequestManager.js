@@ -1,6 +1,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
+const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { checkRequirements } = require("../commands/requirementsCommand.js");
 const verifyCommand = require("../commands/verifyCommand.js");
@@ -265,17 +266,7 @@ class JoinRequestManager {
   }
 
   getLinkedUuidByDiscordId(discordId) {
-    const linkedData = readFileSync("data/linked.json");
-    if (!linkedData) {
-      return null;
-    }
-
-    const linked = JSON.parse(linkedData.toString("utf8"));
-    if (!linked || typeof linked !== "object") {
-      return null;
-    }
-
-    return Object.entries(linked).find(([, value]) => value === discordId)?.[0] || null;
+    return getUuidByDiscordId(discordId);
   }
 
   async getLinkedIdentityByDiscordId(discordId) {

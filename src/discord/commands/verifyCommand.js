@@ -2,22 +2,12 @@ const { Embed, ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandle
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const hypixelRebornAPI = require("../../contracts/API/HypixelRebornAPI.js");
 const { formatError } = require("../../contracts/helperFunctions.js");
+const { upsertLink } = require("../../contracts/linkedStore.js");
 const updateRolesCommand = require("./updateCommand.js");
-const { writeFileSync, readFileSync } = require("fs");
 const config = require("../../../config.json");
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 
 async function verifyWithUsername(interaction, username, extra = {}) {
-  const linkedData = readFileSync("data/linked.json");
-  if (!linkedData) {
-    throw new HypixelDiscordChatBridgeError("The linked data file does not exist. Please contact an administrator.");
-  }
-
-  const linked = JSON.parse(linkedData.toString("utf8"));
-  if (!linked) {
-    throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-  }
-
   const linkedRole = guild.roles.cache.get(config.verification.roles.verified.roleId);
   if (!linkedRole) {
     throw new HypixelDiscordChatBridgeError("The verified role does not exist. Please contact an administrator.");
@@ -36,8 +26,9 @@ async function verifyWithUsername(interaction, username, extra = {}) {
     );
   }
 
-  linked[uuid] = interaction.user.id;
-  writeFileSync("data/linked.json", JSON.stringify(linked, null, 2));
+  if (!upsertLink(uuid, interaction.user.id)) {
+    throw new HypixelDiscordChatBridgeError("Linked account database is unavailable. Please try again later.");
+  }
 
   const embed = new SuccessEmbed(`${extra.user ? `<@${extra.user.id}>'s` : "Your"} account has been successfully linked to \`${nickname}\``)
     .setAuthor({ name: "Successfully linked!" })

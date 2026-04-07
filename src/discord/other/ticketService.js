@@ -1,20 +1,22 @@
 const {
   ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   ChannelType,
-  EmbedBuilder,
   ModalBuilder,
-  PermissionsBitField,
   TextInputBuilder,
   TextInputStyle
 } = require("discord.js");
-const { readFileSync } = require("fs");
+const { actionButton, makePanel, panelPayload } = require("./componentsV2Panels.js");
+const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const config = require("../../../config.json");
 
 const TICKET_CREATE_PREFIX = "ticket:create:";
 const TICKET_ACTION_PREFIX = "ticket:action:";
 const TICKET_MODAL_PREFIX = "ticket:modal:";
+const TICKET_PANEL_PREFIX = "ticket";
+const TICKET_DASHBOARD_SCOPE = "ticket_dashboard";
+const TICKET_VIEWS = ["open", "in_progress", "pending", "closed"];
+const TICKET_EXPANDABLE = ["payment", "audit", "logs"];
+const SERVICE_ADMIN_FALLBACK_NAMES = ["service-admin", "service admin", "serviceadmin"];
 const CARRY_TAG_DEFINITIONS = [
   { key: "active", name: "Active", emoji: "🟢" },
   { key: "queued", name: "Queued", emoji: "📥" },
@@ -32,6 +34,14 @@ class TicketService {
     this.client = null;
     this.dashboardMessageId = null;
     this.webhookCache = new Map();
+    this.formatCoinsShort = (value) => {
+      const num = Number(value || 0);
+      const abs = Math.abs(num);
+      if (abs >= 1e9) return `${(num / 1e9).toFixed(abs >= 1e10 ? 0 : 1)}b`;
+      if (abs >= 1e6) return `${(num / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}m`;
+      if (abs >= 1e3) return `${(num / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}k`;
+      return `${Math.round(num)}`;
+    };
   }
 
   initialize(client) {
@@ -61,6 +71,28 @@ class TicketService {
     return member.roles?.cache?.some((role) => staffRoleIds.includes(role.id));
   }
 
+  getAdminRoleIds(guild = null) {
+    const fromCarryService = this.client?.carryService?.getAdminRoleIds?.(guild);
+    if (Array.isArray(fromCarryService) && fromCarryService.length > 0) {
+      return [...new Set(fromCarryService.map((id) => String(id)))];
+    }
+
+    const bound = this.db.getBinding("service_admin_role_id", null);
+    const fromBinding = /^\d{17,20}$/.test(String(bound || "")) ? [String(bound)] : [];
+    const fallback = this.getStaffRoleIds();
+    const merged = new Set([...fromBinding, ...fallback]);
+    if (merged.size > 0 || !guild?.roles?.cache) return [...merged];
+
+    for (const role of guild.roles.cache.values()) {
+      const normalized = String(role.name || "")
+        .toLowerCase()
+        .replace(/[\s_-]+/g, " ")
+        .trim();
+      if (SERVICE_ADMIN_FALLBACK_NAMES.includes(normalized)) merged.add(String(role.id));
+    }
+    return [...merged];
+  }
+
   getTicketLogsForumId() {
     return this.db.getBinding("ticket_logs_forum_id", config.discord?.tickets?.ticketLogsForumChannelId || null);
   }
@@ -77,36 +109,225 @@ class TicketService {
     this.db.setBinding("ticket_dashboard_channel_id", channelId);
   }
 
-  buildDashboardEmbed() {
-    return new EmbedBuilder()
-      .setColor(0x3498db)
-      .setTitle("Support Tickets")
-      .setDescription("Create a support ticket using the buttons below.")
-      .addFields(
-        { name: "General Support", value: "Questions or generic issues." },
-        { name: "Carry Issue", value: "Problems with an existing carry." },
-        { name: "Payment Issue", value: "Payment-related disputes or confirmation issues." }
-      );
+  getDashboardTicketRows(viewKey = "open") {
+    const db = this.db.getConnection();
+    const key = String(viewKey || "open").toLowerCase();
+    if (key === "closed") {
+      return db.prepare("SELECT id, type, status, customer_discord_id, created_at FROM tickets WHERE status = 'closed' ORDER BY id DESC LIMIT 50").all();
+    }
+    if (key === "pending") {
+      return db
+        .prepare(
+          `SELECT t.id, t.type, t.status, t.customer_discord_id, t.created_at
+           FROM tickets t
+           WHERE EXISTS (SELECT 1 FROM carries c WHERE c.ticket_id = t.id AND c.status = 'pending_confirm')
+           ORDER BY t.id DESC LIMIT 50`
+        )
+        .all();
+    }
+    if (key === "in_progress") {
+      return db
+        .prepare(
+          `SELECT t.id, t.type, t.status, t.customer_discord_id, t.created_at
+           FROM tickets t
+           WHERE EXISTS (SELECT 1 FROM carries c WHERE c.ticket_id = t.id AND c.status IN ('claimed','in_progress'))
+           ORDER BY t.id DESC LIMIT 50`
+        )
+        .all();
+    }
+    return db.prepare("SELECT id, type, status, customer_discord_id, created_at FROM tickets WHERE status = 'open' ORDER BY id DESC LIMIT 50").all();
+  }
+
+  getDashboardCounters() {
+    const db = this.db.getConnection();
+    const ticketRows = db
+      .prepare(
+        `SELECT
+          SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_count,
+          SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) AS closed_count,
+          COUNT(*) AS total_count
+        FROM tickets`
+      )
+      .get();
+    const carryRows = db
+      .prepare(
+        `SELECT
+          SUM(CASE WHEN status IN ('claimed', 'in_progress') THEN 1 ELSE 0 END) AS in_progress_count,
+          SUM(CASE WHEN status = 'pending_confirm' THEN 1 ELSE 0 END) AS pending_count,
+          SUM(CASE WHEN status = 'completed' AND completed_at >= ? THEN 1 ELSE 0 END) AS completed_today
+        FROM carries`
+      )
+      .get(new Date(new Date().toDateString()).getTime());
+
+    return {
+      open: Number(ticketRows?.open_count || 0),
+      inProgress: Number(carryRows?.in_progress_count || 0),
+      pending: Number(carryRows?.pending_count || 0),
+      closed: Number(ticketRows?.closed_count || 0),
+      total: Number(ticketRows?.total_count || 0),
+      completedToday: Number(carryRows?.completed_today || 0)
+    };
+  }
+
+  getPanelState(messageId, actorId) {
+    return (
+      this.db.getUiPanelState({
+        panelScope: TICKET_DASHBOARD_SCOPE,
+        messageId: String(messageId || "0"),
+        actorId: String(actorId || "0"),
+        fallback: { viewKey: "open", page: 1, expanded: [] }
+      }) || { viewKey: "open", page: 1, expanded: [] }
+    );
+  }
+
+  setPanelState(messageId, actorId, next) {
+    this.db.setUiPanelState({
+      panelScope: TICKET_DASHBOARD_SCOPE,
+      messageId: String(messageId || "0"),
+      actorId: String(actorId || "0"),
+      viewKey: next?.viewKey || "open",
+      page: Math.max(1, Number(next?.page || 1)),
+      expanded: Array.isArray(next?.expanded) ? next.expanded : []
+    });
+  }
+
+  paginateRows(rows, page = 1, pageSize = 10) {
+    const safePage = Math.max(1, Number(page || 1));
+    const safePageSize = Math.max(1, Number(pageSize || 10));
+    const total = Array.isArray(rows) ? rows.length : 0;
+    const maxPage = Math.max(1, Math.ceil(total / safePageSize));
+    const clampedPage = Math.min(safePage, maxPage);
+    const start = (clampedPage - 1) * safePageSize;
+    const items = rows.slice(start, start + safePageSize);
+    return { items, page: clampedPage, maxPage, total };
+  }
+
+  buildDashboardPanel(options = {}) {
+    const viewKey = TICKET_VIEWS.includes(String(options?.viewKey || "").toLowerCase()) ? String(options.viewKey).toLowerCase() : "open";
+    const page = Math.max(1, Number(options?.page || 1));
+    const expanded = Array.isArray(options?.expanded) ? options.expanded.filter((key) => TICKET_EXPANDABLE.includes(key)) : [];
+    const rows = this.getDashboardTicketRows(viewKey);
+    const counters = this.getDashboardCounters();
+    const { items, page: currentPage, maxPage, total } = this.paginateRows(rows, page, 8);
+    const list =
+      items.length > 0
+        ? items.map((row) => `- #${row.id} **${row.type}** | <@${row.customer_discord_id || "0"}> | ${row.status} | <t:${Math.floor(Number(row.created_at || Date.now()) / 1000)}:R>`)
+        : ["No tickets in this view."];
+
+    const sections = [
+      {
+        title: "Summary",
+        lines: [
+          `- Queue Size: **${counters.open}**`,
+          `- In Progress: **${counters.inProgress}**`,
+          `- Pending: **${counters.pending}**`,
+          `- Closed: **${counters.closed}**`,
+          `- Completed Today: **${counters.completedToday}**`
+        ]
+      },
+      {
+        title: "Categories",
+        lines: ["- General Support: questions or generic issues.", "- Carry Issue: problems with an existing carry.", "- Payment Issue: disputes or confirmation issues."]
+      },
+      {
+        title: "Ticket List",
+        lines: [`Page **${currentPage}/${maxPage}** | Showing **${items.length}/${total}** in **${viewKey}**`, ...list]
+      }
+    ];
+
+    if (expanded.includes("payment")) {
+      const payment = this.db
+        .getConnection()
+        .prepare(
+          `SELECT
+            COALESCE(SUM(final_price), 0) AS total_price,
+            COALESCE(SUM(paid_amount), 0) AS paid_amount,
+            COALESCE(SUM(final_price - paid_amount), 0) AS remaining_amount
+          FROM carries
+          WHERE status IN ('queued', 'claimed', 'in_progress', 'pending_confirm')`
+        )
+        .get();
+      sections.push({
+        title: "Payment Breakdown",
+        lines: [
+          `- Active Total: **${this.formatCoinsShort(payment?.total_price || 0)}**`,
+          `- Paid: **${this.formatCoinsShort(payment?.paid_amount || 0)}**`,
+          `- Remaining: **${this.formatCoinsShort(payment?.remaining_amount || 0)}**`
+        ]
+      });
+    }
+
+    if (expanded.includes("audit")) {
+      const recent = this.db
+        .getConnection()
+        .prepare("SELECT event_type, entity_id, created_at FROM events WHERE entity_type = 'ticket' ORDER BY id DESC LIMIT 5")
+        .all();
+      sections.push({
+        title: "Audit Details",
+        lines:
+          recent.length > 0
+            ? recent.map((entry) => `- ${String(entry.event_type)} on #${entry.entity_id} at <t:${Math.floor(Number(entry.created_at || Date.now()) / 1000)}:R>`)
+            : ["No recent ticket audit events."]
+      });
+    }
+
+    if (expanded.includes("logs")) {
+      const recent = this.db
+        .getConnection()
+        .prepare("SELECT ticket_id, author_username, created_at FROM ticket_messages ORDER BY id DESC LIMIT 5")
+        .all();
+      sections.push({
+        title: "Logs Summary",
+        lines:
+          recent.length > 0
+            ? recent.map((entry) => `- #${entry.ticket_id} by **${entry.author_username || "unknown"}** at <t:${Math.floor(Number(entry.created_at || Date.now()) / 1000)}:R>`)
+            : ["No mirrored logs yet."]
+      });
+    }
+
+    return makePanel({
+      title: "Support Tickets",
+      status: `${viewKey} (${total})`,
+      sections,
+      actions: [
+        actionButton(`${TICKET_CREATE_PREFIX}general`, "General Support", 1),
+        actionButton(`${TICKET_CREATE_PREFIX}carry_issue`, "Carry Issue", 2),
+        actionButton(`${TICKET_CREATE_PREFIX}payment_issue`, "Payment Issue", 4)
+      ],
+      tabs: [
+        actionButton(`${TICKET_PANEL_PREFIX}:view:dashboard:open`, "Open", 2, { disabled: viewKey === "open" }),
+        actionButton(`${TICKET_PANEL_PREFIX}:view:dashboard:in_progress`, "In Progress", 2, { disabled: viewKey === "in_progress" }),
+        actionButton(`${TICKET_PANEL_PREFIX}:view:dashboard:pending`, "Pending", 2, { disabled: viewKey === "pending" }),
+        actionButton(`${TICKET_PANEL_PREFIX}:view:dashboard:closed`, "Closed", 2, { disabled: viewKey === "closed" })
+      ],
+      nav: [
+        actionButton(`${TICKET_PANEL_PREFIX}:page:dashboard:${Math.max(1, currentPage - 1)}`, "Prev", 2, { disabled: currentPage <= 1 }),
+        actionButton(`${TICKET_PANEL_PREFIX}:page:dashboard:${Math.min(maxPage, currentPage + 1)}`, "Next", 2, { disabled: currentPage >= maxPage }),
+        actionButton(`${TICKET_PANEL_PREFIX}:jump:dashboard`, "Jump", 1),
+        actionButton(`${TICKET_PANEL_PREFIX}:refresh:dashboard`, "Refresh", 2),
+        actionButton(
+          `${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("payment") ? "hide_payment" : "show_payment"}`,
+          expanded.includes("payment") ? "Hide Payment" : "Show Payment",
+          2
+        ),
+        actionButton(`${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("audit") ? "hide_audit" : "show_audit"}`, expanded.includes("audit") ? "Hide Audit" : "Show Audit", 2),
+        actionButton(`${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("logs") ? "hide_logs" : "show_logs"}`, expanded.includes("logs") ? "Hide Logs" : "Show Logs", 2)
+      ],
+      accentColor: 0x3498db,
+      footer: `Expanded: ${expanded.length ? expanded.join(", ") : "none"}`
+    });
   }
 
   buildDashboardRows() {
-    return [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${TICKET_CREATE_PREFIX}general`).setLabel("General Support").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`${TICKET_CREATE_PREFIX}carry_issue`).setLabel("Carry Issue").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${TICKET_CREATE_PREFIX}payment_issue`).setLabel("Payment Issue").setStyle(ButtonStyle.Danger)
-      )
-    ];
+    return [];
   }
 
   buildTicketControlRows(ticketId) {
     return [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reopen:${ticketId}`).setLabel("Reopen Ticket").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reassign_carrier:${ticketId}`).setLabel("Reassign Carrier(s)").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}reassign_customer:${ticketId}`).setLabel("Reassign Customer").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`${TICKET_ACTION_PREFIX}delete_entry:${ticketId}`).setLabel("Delete Entry").setStyle(ButtonStyle.Danger)
-      )
+      actionButton(`${TICKET_ACTION_PREFIX}reopen:${ticketId}`, "Reopen Ticket", 1),
+      actionButton(`${TICKET_ACTION_PREFIX}reassign_carrier:${ticketId}`, "Reassign Carrier(s)", 2),
+      actionButton(`${TICKET_ACTION_PREFIX}reassign_customer:${ticketId}`, "Reassign Customer", 2),
+      actionButton(`${TICKET_ACTION_PREFIX}delete_entry:${ticketId}`, "Delete Entry", 4)
     ];
   }
 
@@ -126,7 +347,7 @@ class TicketService {
     return `├🎟️》${typePart}-${amountPart}-${namePart}`.slice(0, 100);
   }
 
-  async publishDashboard(channelId = null) {
+  async publishDashboard(channelId = null, options = {}) {
     const targetId = channelId || this.getTicketDashboardChannelId();
     if (!targetId || !this.client) {
       return null;
@@ -145,10 +366,13 @@ class TicketService {
       message = await channel.messages.fetch(existingId).catch(() => null);
     }
 
-    const payload = {
-      embeds: [this.buildDashboardEmbed()],
-      components: this.buildDashboardRows()
-    };
+    const payload = panelPayload(
+      this.buildDashboardPanel({
+        viewKey: String(options?.viewKey || "open"),
+        page: Number(options?.page || 1),
+        expanded: Array.isArray(options?.expanded) ? options.expanded : []
+      })
+    );
 
     if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
@@ -169,13 +393,8 @@ class TicketService {
   }
 
   resolveLinkedIdentity(discordId) {
-    try {
-      const linked = JSON.parse(readFileSync("data/linked.json", "utf8"));
-      const entry = Object.entries(linked || {}).find(([, value]) => String(value) === String(discordId));
-      return entry ? { uuid: entry[0] } : null;
-    } catch {
-      return null;
-    }
+    const uuid = getUuidByDiscordId(discordId);
+    return uuid ? { uuid } : null;
   }
 
   async createTicket({ guildId, type, title, customer, initialContent = "", source = "discord", amount = null }) {
@@ -263,20 +482,30 @@ class TicketService {
       starter = await forum.threads.create({
         name,
         message: {
-          content: `Ticket #${ticket.id} opened by <@${ticket.customer_discord_id || "0"}>`,
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x2ecc71)
-              .setTitle(context.title || ticket.title || "Support Ticket")
-              .setDescription(context.initialContent || "No additional context provided.")
-              .addFields(
-                { name: "Ticket ID", value: String(ticket.id), inline: true },
-                { name: "Type", value: String(ticket.type), inline: true },
-                { name: "Customer", value: `<@${ticket.customer_discord_id || "0"}>`, inline: true }
-              )
-              .setTimestamp(new Date(ticket.created_at))
-          ],
-          components: this.buildTicketControlRows(ticket.id)
+          ...panelPayload(
+            makePanel({
+              title: context.title || ticket.title || "Support Ticket",
+              status: String(ticket.status || "open"),
+              sections: [
+                {
+                  title: "Ticket",
+                  lines: [
+                    `- Ticket ID: **${ticket.id}**`,
+                    `- Type: **${String(ticket.type)}**`,
+                    `- Customer: <@${ticket.customer_discord_id || "0"}>`,
+                    `- Opened By: <@${ticket.customer_discord_id || "0"}>`
+                  ]
+                },
+                {
+                  title: "Initial Context",
+                  lines: [context.initialContent || "No additional context provided."]
+                }
+              ],
+              actions: this.buildTicketControlRows(ticket.id),
+              accentColor: 0x2ecc71,
+              footer: `Created: <t:${Math.floor(Number(ticket.created_at || Date.now()) / 1000)}:f>`
+            })
+          )
         }
       });
     } catch (error) {
@@ -288,6 +517,11 @@ class TicketService {
     }
 
     const starterMessage = await starter.fetchStarterMessage().catch(() => null);
+
+    const adminRoleIds = this.getAdminRoleIds(starter.guild || forum.guild);
+    for (const roleId of adminRoleIds) {
+      await starter.permissionOverwrites?.edit(roleId, { ViewChannel: true, ReadMessageHistory: true, SendMessages: true }).catch(() => {});
+    }
 
     this.db
       .getConnection()
@@ -505,6 +739,8 @@ class TicketService {
 
     if (carryIdForActivity) {
       this.client?.carryService?.touchCarryActivity?.(carryIdForActivity, Number(message.createdTimestamp || Date.now()));
+      // Keep the execution control panel sticky at the bottom after chat activity.
+      this.client?.carryService?.refreshExecutionPanel?.(carryIdForActivity).catch(() => {});
     }
 
     // Avoid recursively mirroring forum thread entries.
@@ -541,6 +777,68 @@ class TicketService {
 
   async handleComponent(interaction) {
     const parsed = TicketService.parseComponent(interaction.customId);
+    if (interaction.customId?.startsWith(`${TICKET_PANEL_PREFIX}:view:dashboard:`)) {
+      const viewKey = String(interaction.customId.split(":").pop() || "open").toLowerCase();
+      const messageId = interaction.message?.id || this.db.getBinding("ticket_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const nextView = TICKET_VIEWS.includes(viewKey) ? viewKey : "open";
+      const current = this.getPanelState(messageId, actorId);
+      this.setPanelState(messageId, actorId, { viewKey: nextView, page: 1, expanded: current.expanded });
+      await interaction.update(panelPayload(this.buildDashboardPanel({ viewKey: nextView, page: 1, expanded: current.expanded }))).catch(async () => {
+        await this.publishDashboard(null, { viewKey: nextView, page: 1, expanded: current.expanded }).catch(() => {});
+      });
+      return true;
+    }
+
+    if (interaction.customId?.startsWith(`${TICKET_PANEL_PREFIX}:page:dashboard:`)) {
+      const page = Math.max(1, Number(interaction.customId.split(":").pop() || 1));
+      const messageId = interaction.message?.id || this.db.getBinding("ticket_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const current = this.getPanelState(messageId, actorId);
+      this.setPanelState(messageId, actorId, { viewKey: current.viewKey, page, expanded: current.expanded });
+      await interaction.update(panelPayload(this.buildDashboardPanel({ viewKey: current.viewKey, page, expanded: current.expanded }))).catch(async () => {
+        await this.publishDashboard(null, { viewKey: current.viewKey, page, expanded: current.expanded }).catch(() => {});
+      });
+      return true;
+    }
+
+    if (interaction.customId === `${TICKET_PANEL_PREFIX}:jump:dashboard`) {
+      const modal = new ModalBuilder().setCustomId(`${TICKET_MODAL_PREFIX}jump:dashboard:${interaction.message?.id || "0"}`).setTitle("Jump To Page");
+      const input = new TextInputBuilder().setCustomId("page").setStyle(TextInputStyle.Short).setRequired(true).setLabel("Page Number");
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      await interaction.showModal(modal);
+      return true;
+    }
+
+    if (interaction.customId === `${TICKET_PANEL_PREFIX}:refresh:dashboard`) {
+      const messageId = interaction.message?.id || this.db.getBinding("ticket_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const current = this.getPanelState(messageId, actorId);
+      await interaction.update(panelPayload(this.buildDashboardPanel({ viewKey: current.viewKey, page: current.page, expanded: current.expanded }))).catch(async () => {
+        await this.publishDashboard(null, { viewKey: current.viewKey, page: current.page, expanded: current.expanded }).catch(() => {});
+      });
+      return true;
+    }
+
+    if (interaction.customId?.startsWith(`${TICKET_PANEL_PREFIX}:toggle:dashboard:`)) {
+      const mode = String(interaction.customId.split(":").pop() || "show_payment");
+      const messageId = interaction.message?.id || this.db.getBinding("ticket_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const current = this.getPanelState(messageId, actorId);
+      const expanded = new Set(Array.isArray(current.expanded) ? current.expanded : []);
+      if (mode === "show_payment") expanded.add("payment");
+      if (mode === "hide_payment") expanded.delete("payment");
+      if (mode === "show_audit") expanded.add("audit");
+      if (mode === "hide_audit") expanded.delete("audit");
+      if (mode === "show_logs") expanded.add("logs");
+      if (mode === "hide_logs") expanded.delete("logs");
+      const next = { viewKey: current.viewKey, page: current.page, expanded: [...expanded] };
+      this.setPanelState(messageId, actorId, next);
+      await interaction.update(panelPayload(this.buildDashboardPanel(next))).catch(async () => {
+        await this.publishDashboard(null, next).catch(() => {});
+      });
+      return true;
+    }
     if (!parsed) return false;
 
     if (parsed.kind === "create") {
@@ -609,12 +907,25 @@ class TicketService {
 
   async handleModal(interaction) {
     if (!interaction.customId?.startsWith(TICKET_MODAL_PREFIX)) return false;
+
+    const payload = interaction.customId.slice(TICKET_MODAL_PREFIX.length);
+    if (payload.startsWith("jump:dashboard:")) {
+      const messageId = String(payload.split(":")[2] || this.db.getBinding("ticket_dashboard_message_id", "0"));
+      const actorId = interaction.user?.id || "0";
+      const page = Math.max(1, Number(interaction.fields.getTextInputValue("page") || 1));
+      const current = this.getPanelState(messageId, actorId);
+      this.setPanelState(messageId, actorId, { viewKey: current.viewKey, page, expanded: current.expanded });
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      await this.publishDashboard(null, { viewKey: current.viewKey, page, expanded: current.expanded }).catch(() => {});
+      await interaction.editReply({ content: `Moved to page ${page}.` });
+      return true;
+    }
+
     if (!this.isStaff(interaction.member)) {
       await interaction.reply({ content: "Only staff can use this ticket action.", ephemeral: true });
       return true;
     }
 
-    const payload = interaction.customId.slice(TICKET_MODAL_PREFIX.length);
     const [action, ticketIdRaw] = payload.split(":");
     const ticketId = Number(ticketIdRaw);
     const value = String(interaction.fields.getTextInputValue("value") || "").trim();
@@ -784,9 +1095,16 @@ class TicketService {
     if (!thread) return;
 
     const preview = transcriptText.length > 1800 ? `${transcriptText.slice(0, 1800)}\n...` : transcriptText;
-    await thread.send({
-      embeds: [new EmbedBuilder().setColor(0x95a5a6).setTitle(`Transcript for Ticket #${ticket.id}`).setDescription(`\`\`\`\n${preview}\n\`\`\``)]
-    });
+    await thread.send(
+      panelPayload(
+        makePanel({
+          title: `Transcript for Ticket #${ticket.id}`,
+          status: "Archived Snapshot",
+          sections: [{ title: "Transcript", lines: [`\`\`\`\n${preview}\n\`\`\``] }],
+          accentColor: 0x95a5a6
+        })
+      )
+    );
   }
 }
 

@@ -1,5 +1,6 @@
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { Embed, SuccessEmbed } = require("../../contracts/embedHandler.js");
+const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const { getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { writeFileSync, readFileSync } = require("fs");
 const config = require("../../../config.json");
@@ -38,17 +39,7 @@ module.exports = {
   removeExpiredInactivity,
 
   execute: async (interaction) => {
-    const linkedData = readFileSync("data/linked.json");
-    if (!linkedData) {
-      throw new HypixelDiscordChatBridgeError("The linke data file does not exist. Please contact an administrator.");
-    }
-
-    const linked = JSON.parse(linkedData.toString());
-    if (!linked) {
-      throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-    }
-
-    const uuid = Object.entries(linked).find(([, value]) => value === interaction.user.id)?.[0];
+    const uuid = getUuidByDiscordId(interaction.user.id);
     if (!uuid) {
       throw new HypixelDiscordChatBridgeError("You are not linked to a Minecraft account.");
     }

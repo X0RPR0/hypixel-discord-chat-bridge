@@ -1,7 +1,10 @@
 const config = require("../../../config.json");
 const { unemojify } = require("node-emoji");
-const { readFileSync } = require("fs");
+const { getAllLinks, getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const activityTracker = require("../other/activityTracker.js");
+const { carryDatabase } = require("../other/carryDatabase.js");
+
+const GUILD_MUTED_USERS_KEY = "guild_muted_users_json";
 
 class MessageHandler {
   constructor(discord, command) {
@@ -48,6 +51,11 @@ class MessageHandler {
         return;
       }
 
+      if (this.isGuildMutedFromBridge(message.author.id)) {
+        await message.react("🔇").catch(() => {});
+        return;
+      }
+
       this.recordActivity(message.author.id);
 
       if (messageData.message.length > 220) {
@@ -83,13 +91,7 @@ class MessageHandler {
       return this.linkedCache;
     }
 
-    try {
-      const data = readFileSync("data/linked.json", "utf8");
-      const linked = JSON.parse(data);
-      this.linkedCache = linked && typeof linked === "object" ? linked : {};
-    } catch {
-      this.linkedCache = {};
-    }
+    this.linkedCache = getAllLinks();
 
     this.linkedCacheExpiresAt = now + 60000;
     return this.linkedCache;
@@ -217,6 +219,22 @@ class MessageHandler {
     const validChannelIds = [config.discord.channels.officerChannel, config.discord.channels.guildChatChannel, config.discord.channels.debugChannel];
 
     return isValid && validChannelIds.includes(message.channel.id);
+  }
+
+  getGuildMutedUsersSet() {
+    const raw = String(carryDatabase.getBinding(GUILD_MUTED_USERS_KEY, "[]") || "[]");
+    try {
+      const parsed = JSON.parse(raw);
+      return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item).toLowerCase()) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  isGuildMutedFromBridge(discordId) {
+    const uuid = String(getUuidByDiscordId(discordId) || "").toLowerCase();
+    if (!uuid) return false;
+    return this.getGuildMutedUsersSet().has(uuid);
   }
 }
 

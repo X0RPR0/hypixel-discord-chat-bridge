@@ -1,6 +1,5 @@
-const HypixelDiscordChatBridgeError = require("./errorHandler.js");
+const { getUuidByDiscordId } = require("./linkedStore.js");
 const config = require("../../config.json");
-const { readFileSync } = require("fs");
 
 function isGuildMember(interaction) {
   const user = interaction.member;
@@ -31,17 +30,7 @@ function isVerifiedMember(interaction) {
 }
 
 function isLinkedMember(interaction) {
-  const linkedData = readFileSync("data/linked.json");
-  if (!linkedData) {
-    throw new HypixelDiscordChatBridgeError("The linked data file does not exist. Please contact an administrator.");
-  }
-
-  const linked = JSON.parse(linkedData.toString());
-  if (!linked) {
-    throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-  }
-
-  const uuid = Object.entries(linked).find(([, value]) => value === interaction.user.id)?.[0];
+  const uuid = getUuidByDiscordId(interaction.user.id);
   if (!uuid) {
     return false;
   }

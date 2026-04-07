@@ -3,8 +3,8 @@ const { getUUID, getUsername } = require("./API/mowojangAPI.js");
 const hypixel = require("./API/HypixelRebornAPI.js");
 const { getLatestProfile } = require("../../API/functions/getLatestProfile.js");
 const { delay } = require("./helperFunctions.js");
+const { getAllLinks, getDiscordIdByUuid, getUuidByDiscordId } = require("./linkedStore.js");
 const config = require("../../config.json");
-const fs = require("fs");
 
 function getRankupConfig() {
   const defaults = {
@@ -51,17 +51,7 @@ function getSortedTiers() {
 }
 
 function readLinkedData() {
-  try {
-    const data = fs.readFileSync("data/linked.json");
-    if (!data) {
-      return {};
-    }
-
-    const linked = JSON.parse(data.toString("utf8"));
-    return linked && typeof linked === "object" ? linked : {};
-  } catch {
-    return {};
-  }
+  return getAllLinks();
 }
 
 function getSkyblockLevelFromMember(member) {
@@ -109,8 +99,7 @@ async function getInvokerGuildRankByUsername(username, guild) {
 }
 
 async function getInvokerGuildRankByDiscordId(discordId, guild) {
-  const linked = readLinkedData();
-  const uuid = Object.entries(linked).find(([, id]) => id === discordId)?.[0];
+  const uuid = getUuidByDiscordId(discordId);
   if (!uuid) {
     throw new HypixelDiscordChatBridgeError("You are not linked to a Minecraft account.");
   }
@@ -137,8 +126,7 @@ async function applyGuildRank(username, targetRank) {
 }
 
 async function trySyncLinkedDiscordRoles(uuid) {
-  const linked = readLinkedData();
-  const discordId = linked[uuid];
+  const discordId = getDiscordIdByUuid(uuid);
   if (!discordId) {
     return { status: "skipped", reason: "No Discord link found." };
   }

@@ -30,6 +30,7 @@ class StateHandler {
     await this.discord.carryService.db.initialize();
     this.discord.ticketService.initialize(this.discord.client);
     this.discord.carryService.initialize(this.discord.client);
+    this.discord.carrySetupService?.initialize(this.discord.client);
     giveawayService.initialize(this.discord.client);
     await this.discord.ticketService.publishDashboard().catch(() => {});
     await this.discord.carryService.publishCarryDashboard().catch(() => {});

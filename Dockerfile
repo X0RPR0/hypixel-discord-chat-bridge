@@ -19,11 +19,13 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 COPY --chown=node:node . /usr/src/app
 
 # run your app
+RUN chown -R node:node /usr/src/app
 USER node
 RUN mkdir -p /home/node/.ssh \
   && chmod 700 /home/node/.ssh \
   && touch /home/node/.ssh/known_hosts \
   && (ssh-keyscan -H github.com >> /home/node/.ssh/known_hosts 2>/dev/null || true) \
   && chmod 644 /home/node/.ssh/known_hosts \
-  && git config --global pull.rebase false
+  && git config --global pull.rebase false \
+  && git config --global --add safe.directory /usr/src/app
 CMD ["dumb-init", "node", "index.js"]

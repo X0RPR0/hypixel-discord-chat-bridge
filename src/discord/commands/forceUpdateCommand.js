@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const updateRolesCommand = require("./updateCommand.js");
-const fs = require("fs");
+const { getAllDiscordIds } = require("../../contracts/linkedStore.js");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,16 +14,6 @@ module.exports = {
   requiresBot: true,
 
   execute: async (interaction, extra = { everyone: false, hidden: false }) => {
-    const linkedData = fs.readFileSync("data/linked.json");
-    if (!linkedData) {
-      throw new HypixelDiscordChatBridgeError("The linked data file does not exist. Please contact an administrator.");
-    }
-
-    const linked = JSON.parse(linkedData.toString("utf8"));
-    if (!linked) {
-      throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-    }
-
     const user = interaction?.options?.getUser("user");
     const everyone = extra.everyone || interaction?.options?.getBoolean("everyone");
     if (!user && !everyone) {
@@ -39,7 +29,11 @@ module.exports = {
     }
 
     if (everyone) {
-      const discordIds = Object.values(linked);
+      const discordIds = getAllDiscordIds();
+      if (!discordIds.length) {
+        throw new HypixelDiscordChatBridgeError("No linked users found.");
+      }
+
       for (const discordId of discordIds) {
         await updateRolesCommand.execute(interaction, { discordId, hidden: extra.hidden });
         console.log(`Updated roles for ${discordId}`);

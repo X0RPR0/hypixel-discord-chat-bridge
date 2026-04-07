@@ -18,18 +18,27 @@ class WebServer {
     wss.on("connection", (ws) => {
       console.web("Client has connected to the server.");
       ws.on("message", (message) => {
-        message = JSON.parse(message);
-        if (typeof message !== "object") {
+        let parsed = null;
+        try {
+          const raw = typeof message === "string" ? message : message?.toString?.("utf8");
+          if (!raw || raw.trim().length === 0) return;
+          parsed = JSON.parse(raw);
+        } catch {
+          console.warn("WebSocket message parse failed: invalid JSON payload.");
           return;
         }
 
-        if (message.type === "message" && message.token === config.web.token && message.data) {
-          console.web(`Received: ${JSON.stringify(message)}`);
-          bot.chat(message.data);
+        if (!parsed || typeof parsed !== "object") {
+          return;
+        }
+
+        if (parsed.type === "message" && parsed.token === config.web.token && parsed.data) {
+          console.web(`Received: ${JSON.stringify(parsed)}`);
+          this.bot?.chat(parsed.data);
         }
       });
 
-      bot.on("message", (message) => {
+      this.bot?.on("message", (message) => {
         ws.send(JSON.stringify(message));
       });
     });

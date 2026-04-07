@@ -12,8 +12,8 @@ const { getEssence } = require("../../../API/stats/essence.js");
 const { getSlayer } = require("../../../API/stats/slayer.js");
 const { getSkills } = require("../../../API/stats/skills.js");
 const { getJacob } = require("../../../API/stats/jacob.js");
+const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const config = require("../../../config.json");
-const fs = require("fs");
 const { getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 
@@ -336,18 +336,8 @@ module.exports = {
 
   execute: async (interaction, extra = { discordId: null, hidden: false }) => {
     try {
-      const linkedData = fs.readFileSync("data/linked.json");
-      if (!linkedData) {
-        throw new HypixelDiscordChatBridgeError("The linked data file does not exist. Please contact an administrator.");
-      }
-
-      const linked = JSON.parse(linkedData.toString());
-      if (!linked) {
-        throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-      }
-
       const discordId = extra.discordId ?? interaction.user.id;
-      const uuid = Object.entries(linked).find(([, value]) => value === discordId)?.[0];
+      const uuid = getUuidByDiscordId(discordId);
       if (!uuid) {
         throw new HypixelDiscordChatBridgeError("You are not linked to a Minecraft account.");
       }

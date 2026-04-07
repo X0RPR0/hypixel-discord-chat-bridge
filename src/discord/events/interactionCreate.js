@@ -31,7 +31,7 @@ module.exports = {
         }
 
         console.discord(`${interaction.user.username} - [${interaction.commandName}]`);
-        await interaction.deferReply().catch(() => {});
+        await interaction.deferReply(command?.ephemeral === true ? { ephemeral: true } : {}).catch(() => {});
         if (memberRoles.some((role) => config.discord.commands.blacklistRoles.includes(role))) {
           throw new HypixelDiscordChatBridgeError("You are blacklisted from the bot.");
         }
@@ -66,6 +66,13 @@ module.exports = {
 
         await command.execute(interaction);
       } else if (interaction.isButton()) {
+        if (interaction.client.carrySetupService) {
+          const handledBySetup = await interaction.client.carrySetupService.handleComponent(interaction).catch(() => false);
+          if (handledBySetup) {
+            return;
+          }
+        }
+
         if (interaction.client.ticketService) {
           const handledByTicket = await interaction.client.ticketService.handleComponent(interaction).catch(() => false);
           if (handledByTicket) {
@@ -172,13 +179,32 @@ module.exports = {
           await interaction.followUp({ embeds: [embed], ephemeral: true });
         }
       } else if (interaction.isStringSelectMenu()) {
+        if (interaction.client.carrySetupService) {
+          const handledBySetup = await interaction.client.carrySetupService.handleComponent(interaction).catch(() => false);
+          if (handledBySetup) {
+            return;
+          }
+        }
         if (interaction.client.carryService) {
           const handledByCarry = await interaction.client.carryService.handleComponent(interaction).catch(() => false);
           if (handledByCarry) {
             return;
           }
         }
+      } else if (interaction.isChannelSelectMenu?.()) {
+        if (interaction.client.carrySetupService) {
+          const handledBySetup = await interaction.client.carrySetupService.handleComponent(interaction).catch(() => false);
+          if (handledBySetup) {
+            return;
+          }
+        }
       } else if (interaction.isModalSubmit()) {
+        if (interaction.client.carrySetupService) {
+          const handledBySetupModal = await interaction.client.carrySetupService.handleModal(interaction).catch(() => false);
+          if (handledBySetupModal) {
+            return;
+          }
+        }
         if (interaction.client.ticketService) {
           const handledByTicketModal = await interaction.client.ticketService.handleModal(interaction).catch(() => false);
           if (handledByTicketModal) {

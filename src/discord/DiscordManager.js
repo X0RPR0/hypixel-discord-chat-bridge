@@ -9,6 +9,7 @@ const { JoinRequestManager } = require("./other/joinRequestManager.js");
 const { carryDatabase } = require("./other/carryDatabase.js");
 const { TicketService } = require("./other/ticketService.js");
 const { CarryService } = require("./other/carryService.js");
+const { CarrySetupService } = require("./other/carrySetupService.js");
 const config = require("../../config.json");
 const fs = require("fs");
 const { ErrorEmbed } = require("../contracts/embedHandler.js");
@@ -25,6 +26,7 @@ class DiscordManager extends CommunicationBridge {
     this.joinRequestManager = new JoinRequestManager(this);
     this.ticketService = new TicketService(carryDatabase);
     this.carryService = new CarryService(carryDatabase, this.ticketService);
+    this.carrySetupService = new CarrySetupService({ db: carryDatabase, carryService: this.carryService, ticketService: this.ticketService });
   }
 
   connect() {
@@ -36,6 +38,7 @@ class DiscordManager extends CommunicationBridge {
     this.client.joinRequestManager = this.joinRequestManager;
     this.client.ticketService = this.ticketService;
     this.client.carryService = this.carryService;
+    this.client.carrySetupService = this.carrySetupService;
     this.commandHandler.loadCommands();
 
     this.client.on(Events.ClientReady, () => this.stateHandler.onReady());

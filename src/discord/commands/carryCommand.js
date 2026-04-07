@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
+const { ButtonStyle, SlashCommandBuilder } = require("discord.js");
+const { actionButton, infoPayload, makePanel, panelPayload } = require("../other/componentsV2Panels.js");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,7 +26,7 @@ module.exports = {
   execute: async (interaction) => {
     const service = interaction.client.carryService;
     if (!service) {
-      return interaction.editReply({ embeds: [new ErrorEmbed("Carry service unavailable.")] });
+      return interaction.editReply(infoPayload({ title: "Carry", status: "Error", lines: ["Carry service unavailable."] }));
     }
 
     const sub = interaction.options.getSubcommand();
@@ -45,25 +45,37 @@ module.exports = {
         source: "slash"
       });
       if (!created.ok) {
-        return interaction.editReply({ embeds: [new ErrorEmbed(created.reason)] });
+        return interaction.editReply(infoPayload({ title: "Carry Request Failed", status: "Error", lines: [created.reason] }));
       }
 
       const mins = Math.max(1, Math.round(created.eta.etaMs / 60000));
-      return interaction.editReply({
-        embeds: [
-          new SuccessEmbed(
-            `Carry #${created.carryId} queued.\nFinal: \`${coins(created.finalPrice)}\`\nETA: \`~${mins}m\`\nFree carry: \`${
-              created.freeEligible
-                ? `yes (${created.freeSource || "weekly"})`
-                : created.freeBlockedByType
-                  ? "no (excluded: Kuudra/M7)"
-                  : created.freeBlockedByVerification
-                    ? "no (verification required)"
-                    : "no"
-            }\``
-          )
-        ]
-      });
+      return interaction.editReply(
+        panelPayload(
+          makePanel({
+            title: `Carry #${created.carryId}`,
+            status: "Queued",
+            sections: [
+              {
+                title: "Summary",
+                lines: [
+                  `- Final: **${coins(created.finalPrice)}**`,
+                  `- ETA: **~${mins}m**`,
+                  `- Free Carry: **${
+                    created.freeEligible
+                      ? `yes (${created.freeSource || "weekly"})`
+                      : created.freeBlockedByType
+                        ? "no (excluded: Kuudra/M7)"
+                        : created.freeBlockedByVerification
+                          ? "no (verification required)"
+                          : "no"
+                  }**`
+                ]
+              }
+            ],
+            actions: [actionButton("carry:carry_refresh", "Refresh Dashboard", ButtonStyle.Secondary)]
+          })
+        )
+      );
     }
 
     if (sub === "status") {
@@ -80,40 +92,50 @@ module.exports = {
       }
 
       if (!carry) {
-        return interaction.editReply({ embeds: [new ErrorEmbed("No carry found.")] });
+        return interaction.editReply(infoPayload({ title: "Carry Status", status: "Not Found", lines: ["No carry found."] }));
       }
 
       if (String(carry.customer_discord_id) !== String(interaction.user.id)) {
-        return interaction.editReply({ embeds: [new ErrorEmbed("You can only view your own carries.")] });
+        return interaction.editReply(infoPayload({ title: "Carry Status", status: "Denied", lines: ["You can only view your own carries."] }));
       }
 
-      return interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x3498db)
-            .setTitle(`Carry #${carry.id}`)
-            .setDescription(`Type: **${carry.carry_type} ${carry.tier}**`)
-            .addFields(
-              { name: "Status", value: String(carry.status), inline: true },
-              { name: "Amount", value: String(carry.amount), inline: true },
-              { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
-              { name: "Final", value: coins(carry.final_price), inline: true },
-              { name: "Paid", value: coins(carry.paid_amount || 0), inline: true }
-            )
-        ]
-      });
+      return interaction.editReply(
+        panelPayload(
+          makePanel({
+            title: `Carry #${carry.id}`,
+            status: String(carry.status),
+            sections: [
+              {
+                title: "Order",
+                lines: [
+                  `- Type: **${carry.carry_type} ${carry.tier}**`,
+                  `- Amount: **${carry.amount}**`,
+                  `- Logged Runs: **${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}**`
+                ]
+              },
+              { title: "Payment", lines: [`- Final: **${coins(carry.final_price)}**`, `- Paid: **${coins(carry.paid_amount || 0)}**`] }
+            ]
+          })
+        )
+      );
     }
 
     if (sub === "free") {
       const status = service.getFreeCarryStatus(interaction.user.id);
       const verified = typeof service.isVerifiedForFreeCarry === "function" ? service.isVerifiedForFreeCarry(interaction.member, interaction.user.id) : false;
-      return interaction.editReply({
-        embeds: [
-          new SuccessEmbed(
-            `Week: \`${status.weekKey}\`\nVerified for free carry: \`${verified ? "yes" : "no"}\`\nWeekly: \`${status.weeklyRemaining}/${status.limit}\`\nBonus: \`${status.bonusRemaining}\`\nTotal available: \`${status.totalRemaining}\`\nExcluded from free: \`Kuudra, Dungeons M7\``
-          )
-        ]
-      });
+      return interaction.editReply(
+        infoPayload({
+          title: "Free Carry Balance",
+          lines: [
+            `Week: ${status.weekKey}`,
+            `Verified: ${verified ? "yes" : "no"}`,
+            `Weekly: ${status.weeklyRemaining}/${status.limit}`,
+            `Bonus: ${status.bonusRemaining}`,
+            `Total: ${status.totalRemaining}`,
+            "Excluded: Kuudra, Dungeons M7"
+          ]
+        })
+      );
     }
 
     if (sub === "mycarries") {
@@ -123,41 +145,55 @@ module.exports = {
         .prepare("SELECT id, carry_type, tier, amount, status, final_price, logged_runs FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 10")
         .all(String(interaction.user.id));
       if (!rows.length) {
-        return interaction.editReply({ embeds: [new ErrorEmbed("No carries found.")] });
+        return interaction.editReply(infoPayload({ title: "My Carries", status: "Not Found", lines: ["No carries found."] }));
       }
 
-      return interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle("My Carries")
-            .setDescription(
-              rows.map((r) => `#${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`).join("\n")
-            )
-        ]
-      });
+      return interaction.editReply(
+        panelPayload(
+          makePanel({
+            title: "My Carries",
+            sections: [
+              {
+                title: "Recent Requests",
+                lines: rows.map(
+                  (r) => `- #${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`
+                )
+              }
+            ]
+          })
+        )
+      );
     }
 
     if (sub === "help") {
-      return interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle("Carry Commands")
-            .setDescription("User-facing carry commands:")
-            .addFields(
-              { name: "/carry request <type> <tier> <amount>", value: "Create a carry request and join the queue." },
-              { name: "/carry status [id]", value: "Show your latest carry or a specific one." },
-              { name: "/carry free", value: "Check weekly/bonus free carry availability (verification required for free usage)." },
-              { name: "/carry mycarries", value: "List your recent carries." },
-              { name: "/carry help", value: "Show this help message." },
-              { name: "In-Game: !carry request <type> <amount>", value: "Create a carry request from Minecraft (linked Discord required, free only if verified)." },
-              { name: "Free Carry Exclusions", value: "Kuudra and Dungeons M7 are always paid." }
-            )
-        ]
-      });
+      return interaction.editReply(
+        panelPayload(
+          makePanel({
+            title: "Carry Commands",
+            sections: [
+              {
+                title: "User Commands",
+                lines: [
+                  "- `/carry request <type> <tier> <amount>`: Create a carry request and join the queue.",
+                  "- `/carry status [id]`: Show your latest carry or a specific one.",
+                  "- `/carry free`: Check weekly/bonus free carry availability.",
+                  "- `/carry mycarries`: List your recent carries.",
+                  "- `/carry help`: Show this help message."
+                ]
+              },
+              {
+                title: "Notes",
+                lines: [
+                  "- In-game: `!carry request <type> <amount>` (linked Discord required).",
+                  "- Free carry exclusions: Kuudra and Dungeons M7."
+                ]
+              }
+            ]
+          })
+        )
+      );
     }
 
-    return interaction.editReply({ embeds: [new ErrorEmbed("Unknown carry subcommand.")] });
+    return interaction.editReply(infoPayload({ title: "Carry", status: "Error", lines: ["Unknown carry subcommand."] }));
   }
 };

@@ -1,10 +1,9 @@
 
 const {
   ActionRowBuilder,
-  ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  EmbedBuilder,
+  ContainerBuilder,
   ModalBuilder,
   OverwriteType,
   PermissionsBitField,
@@ -12,7 +11,8 @@ const {
   TextInputBuilder,
   TextInputStyle
 } = require("discord.js");
-const { readFileSync } = require("fs");
+const { actionButton, makePanel, panelPayload, infoPayload } = require("./componentsV2Panels.js");
+const { getDiscordIdByUuid } = require("../../contracts/linkedStore.js");
 const DiscountEngine = require("./discountEngine.js");
 const EtaEngine = require("./etaEngine.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
@@ -20,6 +20,10 @@ const config = require("../../../config.json");
 
 const CARRY_PREFIX = "carry:";
 const CARRY_MODAL_PREFIX = "carrymodal:";
+const CARRY_QUICK_PANEL_MAP_KEY = "carry_quick_panel_map_json";
+const CARRY_ADMIN_SCOPE = "carry_admin_panel";
+const SERVICE_ADMIN_FALLBACK_NAMES = ["service-admin", "service admin", "serviceadmin"];
+const SERVICE_TEAM_FALLBACK_NAMES = ["service-team", "service team", "serviceteam"];
 const SCORE_WEIGHTS = Object.freeze({
   dungeons: { f1: 1, f2: 2, f3: 3, f4: 5, f5: 7, f6: 10, f7: 15, m1: 18, m2: 22, m3: 26, m4: 32, m5: 40, m6: 55, m7: 75 },
   kuudra: { basic: 15, hot: 22, burning: 35, fiery: 50, infernal: 75 },
@@ -240,11 +244,70 @@ class CarryService {
     return bound && /^\d{17,20}$/.test(String(bound)) ? String(bound) : null;
   }
 
+  setServiceAdminRoleId(roleId) {
+    if (!roleId) {
+      this.db.setBinding("service_admin_role_id", null);
+      return;
+    }
+    this.db.setBinding("service_admin_role_id", String(roleId));
+  }
+
+  getServiceAdminRoleId() {
+    const bound = this.db.getBinding("service_admin_role_id", null);
+    return bound && /^\d{17,20}$/.test(String(bound)) ? String(bound) : null;
+  }
+
+  setServiceTeamRoleId(roleId) {
+    if (!roleId) {
+      this.db.setBinding("service_team_role_id", null);
+      return;
+    }
+    this.db.setBinding("service_team_role_id", String(roleId));
+  }
+
+  getServiceTeamRoleId() {
+    const bound = this.db.getBinding("service_team_role_id", null);
+    return bound && /^\d{17,20}$/.test(String(bound)) ? String(bound) : null;
+  }
+
   getStaffRoleIds() {
     const configured = (config.discord?.tickets?.staffRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id)));
     if (configured.length) return configured;
     const fallback = config.discord?.commands?.commandRole;
     return /^\d{17,20}$/.test(String(fallback || "")) ? [String(fallback)] : [];
+  }
+
+  getAdminRoleIds(guild = null) {
+    const configured = (config.discord?.carry?.serviceAdminRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id))).map((id) => String(id));
+    const bound = this.db.getBinding("service_admin_role_id", null);
+    const fromBinding = /^\d{17,20}$/.test(String(bound || "")) ? [String(bound)] : [];
+    const fromLegacyStaff = this.getStaffRoleIds();
+    const merged = new Set([...configured, ...fromBinding, ...fromLegacyStaff]);
+    if (merged.size > 0 || !guild?.roles?.cache) return [...merged];
+    for (const role of guild.roles.cache.values()) {
+      const normalized = String(role.name || "")
+        .toLowerCase()
+        .replace(/[\s_-]+/g, " ")
+        .trim();
+      if (SERVICE_ADMIN_FALLBACK_NAMES.includes(normalized)) merged.add(String(role.id));
+    }
+    return [...merged];
+  }
+
+  getTeamRoleIds(guild = null) {
+    const configured = (config.discord?.carry?.serviceTeamRoleIds || []).filter((id) => /^\d{17,20}$/.test(String(id))).map((id) => String(id));
+    const bound = this.db.getBinding("service_team_role_id", null);
+    const fromBinding = /^\d{17,20}$/.test(String(bound || "")) ? [String(bound)] : [];
+    const merged = new Set([...configured, ...fromBinding]);
+    if (merged.size > 0 || !guild?.roles?.cache) return [...merged];
+    for (const role of guild.roles.cache.values()) {
+      const normalized = String(role.name || "")
+        .toLowerCase()
+        .replace(/[\s_-]+/g, " ")
+        .trim();
+      if (SERVICE_TEAM_FALLBACK_NAMES.includes(normalized)) merged.add(String(role.id));
+    }
+    return [...merged];
   }
 
   getMemberRoleIds(member) {
@@ -262,6 +325,7 @@ class CarryService {
   }
 
   isStaff(member) {
+    if (this.isAdmin(member) || this.isTeam(member)) return true;
     const configured = this.getStaffRoleIds();
     const fallback = config.discord?.commands?.commandRole;
     const roleIds = this.getMemberRoleIds(member);
@@ -270,6 +334,42 @@ class CarryService {
       return roleIds.some((id) => configured.includes(id));
     }
     return fallback ? roleIds.includes(String(fallback)) : false;
+  }
+
+  isAdmin(member) {
+    if (!member) return false;
+    const roleIds = this.getMemberRoleIds(member);
+    if (!roleIds.length) return false;
+    const adminRoleIds = this.getAdminRoleIds(member.guild || null);
+    if (adminRoleIds.length > 0 && roleIds.some((id) => adminRoleIds.includes(id))) return true;
+    if (member.roles?.cache && typeof member.roles.cache.some === "function") {
+      return member.roles.cache.some((role) => {
+        const normalized = String(role?.name || "")
+          .toLowerCase()
+          .replace(/[\s_-]+/g, " ")
+          .trim();
+        return SERVICE_ADMIN_FALLBACK_NAMES.includes(normalized);
+      });
+    }
+    return false;
+  }
+
+  isTeam(member) {
+    if (!member) return false;
+    const roleIds = this.getMemberRoleIds(member);
+    if (!roleIds.length) return false;
+    const teamRoleIds = this.getTeamRoleIds(member.guild || null);
+    if (teamRoleIds.length > 0 && roleIds.some((id) => teamRoleIds.includes(id))) return true;
+    if (member.roles?.cache && typeof member.roles.cache.some === "function") {
+      return member.roles.cache.some((role) => {
+        const normalized = String(role?.name || "")
+          .toLowerCase()
+          .replace(/[\s_-]+/g, " ")
+          .trim();
+        return SERVICE_TEAM_FALLBACK_NAMES.includes(normalized);
+      });
+    }
+    return false;
   }
 
   isCarrier(member) {
@@ -705,7 +805,7 @@ class CarryService {
         `SELECT q.*, c.carry_type, c.tier, c.amount, c.customer_discord_id, c.final_price, c.is_paid, c.is_free, c.status
          FROM queue_entries q
          JOIN carries c ON c.id = q.carry_id
-         WHERE q.state IN ('queued', 'claimed')
+         WHERE q.state = 'queued'
          ORDER BY q.priority_score DESC, q.created_at ASC`
       )
       .all();
@@ -728,7 +828,239 @@ class CarryService {
     return Number(row?.active || 0);
   }
 
-  async publishCarryDashboard(channelId = null) {
+  getPanelState(panelScope, messageId, actorId) {
+    return this.db.getUiPanelState({
+      panelScope,
+      messageId,
+      actorId,
+      fallback: { viewKey: "overview", page: 1, expanded: [] }
+    });
+  }
+
+  setPanelState(panelScope, messageId, actorId, next) {
+    this.db.setUiPanelState({
+      panelScope,
+      messageId,
+      actorId,
+      viewKey: next?.viewKey || "overview",
+      page: Math.max(1, Number(next?.page || 1)),
+      expanded: Array.isArray(next?.expanded) ? next.expanded : []
+    });
+  }
+
+  getCarryAdminState(messageId, actorId) {
+    const raw = this.db.getUiPanelState({
+      panelScope: CARRY_ADMIN_SCOPE,
+      messageId: String(messageId || "0"),
+      actorId: String(actorId || "0"),
+      fallback: { viewKey: "", page: 1, expanded: [] }
+    });
+    const targetCarryId = /^\d+$/.test(String(raw?.viewKey || "")) ? Number(raw.viewKey) : null;
+    return { targetCarryId };
+  }
+
+  setCarryAdminState(messageId, actorId, targetCarryId) {
+    this.db.setUiPanelState({
+      panelScope: CARRY_ADMIN_SCOPE,
+      messageId: String(messageId || "0"),
+      actorId: String(actorId || "0"),
+      viewKey: targetCarryId ? String(targetCarryId) : "",
+      page: 1,
+      expanded: []
+    });
+  }
+
+  getAdminCarryRows(limit = 25) {
+    return this.db
+      .getConnection()
+      .prepare(
+        `SELECT id, status, carry_type, tier, amount, customer_discord_id, assigned_carrier_discord_ids, paid_amount, final_price, logged_runs
+         FROM carries
+         WHERE status IN ('queued','claimed','in_progress','pending_confirm','awaiting_rating')
+         ORDER BY id DESC
+         LIMIT ?`
+      )
+      .all(Math.max(1, Number(limit || 25)));
+  }
+
+  buildCarryAdminPanel({ messageId, actorId }) {
+    const rows = this.getAdminCarryRows(25);
+    const state = this.getCarryAdminState(messageId, actorId);
+    const fallbackId = rows.length > 0 ? Number(rows[0].id) : null;
+    const targetCarryId = rows.some((row) => Number(row.id) === Number(state.targetCarryId)) ? Number(state.targetCarryId) : fallbackId;
+    if (targetCarryId) this.setCarryAdminState(messageId, actorId, targetCarryId);
+    const target = rows.find((row) => Number(row.id) === Number(targetCarryId)) || null;
+
+    let assignedCarrierIds = [];
+    if (target) {
+      try {
+        const parsed = JSON.parse(target.assigned_carrier_discord_ids || "[]");
+        assignedCarrierIds = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        assignedCarrierIds = [];
+      }
+    }
+
+    const summaryLines = target
+      ? [
+          `- Carry: **#${target.id}** (${target.status})`,
+          `- Type: **${target.carry_type} ${target.tier} x${target.amount}**`,
+          `- Customer: ${target.customer_discord_id ? `<@${target.customer_discord_id}>` : "Unknown"}`,
+          `- Carriers: ${assignedCarrierIds.length ? assignedCarrierIds.map((id) => `<@${id}>`).join(", ") : "none"}`,
+          `- Paid/Total: **${this.formatCoinsShort(target.paid_amount || 0)} / ${this.formatCoinsShort(target.final_price || 0)}**`,
+          `- Runs: **${Number(target.logged_runs || 0)}/${Number(target.amount || 0)}**`
+        ]
+      : ["No active carries available."];
+
+    const panel = makePanel({
+      title: "Carry Admin Panel",
+      status: target ? `Target #${target.id}` : "No active target",
+      sections: [
+        {
+          title: "Controls",
+          lines: [
+            "- Force actions are admin-only.",
+            "- Team members should use normal carry buttons in their claimed ticket channels."
+          ]
+        },
+        {
+          title: "Target",
+          lines: summaryLines
+        }
+      ],
+      actions: [
+        actionButton(`${CARRY_PREFIX}admin_refresh`, "Refresh", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}admin_force_unclaim`, "Force Unclaim", ButtonStyle.Danger, { disabled: !target }),
+        actionButton(`${CARRY_PREFIX}admin_force_reassign`, "Force Reassign", ButtonStyle.Primary, { disabled: !target }),
+        actionButton(`${CARRY_PREFIX}admin_view_logs`, "View Logs", ButtonStyle.Secondary, { disabled: !target })
+      ],
+      accentColor: 0xed4245
+    });
+
+    const options = rows.slice(0, 25).map((row) => ({
+      label: `#${row.id} ${row.carry_type} ${row.tier} x${row.amount}`.slice(0, 100),
+      description: `${String(row.status)} | paid ${this.formatCoinsShort(row.paid_amount || 0)}/${this.formatCoinsShort(row.final_price || 0)}`.slice(0, 100),
+      value: String(row.id),
+      default: Number(row.id) === Number(targetCarryId)
+    }));
+
+    const picker = new StringSelectMenuBuilder()
+      .setCustomId(`${CARRY_PREFIX}admin_target`)
+      .setPlaceholder(rows.length > 0 ? "Select carry target" : "No active carries")
+      .addOptions(options.length > 0 ? options : [{ label: "No active carries", description: "Queue is currently empty.", value: "none" }]);
+    if (rows.length === 0) picker.setDisabled(true);
+
+    panel.addActionRowComponents(new ActionRowBuilder().addComponents(picker));
+    return panelPayload(panel, { ephemeral: true });
+  }
+
+  paginateRows(rows, page = 1, pageSize = 10) {
+    const cleanPage = Math.max(1, Number(page || 1));
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const boundedPage = Math.min(cleanPage, totalPages);
+    const start = (boundedPage - 1) * pageSize;
+    return {
+      items: rows.slice(start, start + pageSize),
+      page: boundedPage,
+      totalPages
+    };
+  }
+
+  buildCarryDashboardPanel({ viewKey = "overview", page = 1 }) {
+    const queueRows = this.getQueueRows();
+    const catalog = this.getEnabledCatalog();
+    const byCategory = new Map();
+    for (const item of catalog) {
+      const key = String(item.category || "other");
+      const list = byCategory.get(key) || [];
+      list.push(item);
+      byCategory.set(key, list);
+    }
+
+    const panelSections = [];
+    const actions = [];
+
+    if (viewKey === "queue") {
+      const paged = this.paginateRows(queueRows, page, 10);
+      const lines = paged.items.length
+        ? paged.items.map((row) => {
+            const paidFlag = Number(row.is_paid) ? "PAID" : Number(row.is_free) ? "FREE" : "STD";
+            return `- #${row.carry_id} [${paidFlag}] ${row.carry_type} ${row.tier} x${row.amount} | <@${row.customer_discord_id}>`;
+          })
+        : ["No queued carries."];
+      panelSections.push({ title: "Queue", lines });
+      panelSections.push({
+        title: "Summary",
+        lines: [`Queue Size: **${queueRows.length}**`, `Active Carriers (7d): **${this.getActiveCarrierStats()}**`]
+      });
+    } else if (viewKey === "stats") {
+      const statsRows = this.db
+        .getConnection()
+        .prepare(
+          `SELECT user_id, completed_tickets_count, actual_carries_count, score_total
+           FROM carrier_stats
+           ORDER BY score_total DESC, completed_tickets_count DESC, updated_at DESC`
+        )
+        .all();
+      const paged = this.paginateRows(statsRows, page, 10);
+      const lines = paged.items.length
+        ? paged.items.map((row, i) => `- ${i + 1 + (paged.page - 1) * 10}. <@${row.user_id}> | tickets: **${Number(row.completed_tickets_count || 0)}** | carries: **${Number(row.actual_carries_count || 0)}** | score: **${Math.round(Number(row.score_total || 0))}**`)
+        : ["No carrier stats yet."];
+      panelSections.push({ title: "Carrier Stats", lines });
+    } else if (viewKey === "logs") {
+      const eventRows = this.db
+        .getConnection()
+        .prepare("SELECT event_type, entity_id, created_at FROM events WHERE entity_type IN ('carry','ticket') ORDER BY id DESC LIMIT 200")
+        .all();
+      const paged = this.paginateRows(eventRows, page, 10);
+      const lines = paged.items.length
+        ? paged.items.map((row) => `- ${row.event_type} (#${row.entity_id}) at <t:${Math.floor(Number(row.created_at || Date.now()) / 1000)}:R>`)
+        : ["No logs yet."];
+      panelSections.push({ title: "Recent Logs", lines });
+    } else {
+      panelSections.push({
+        title: "Overview",
+        lines: [
+          "Select a carry from the dropdown, then enter amount.",
+          "Free carry is available only for verified users (default: 1/week UTC) and is excluded",
+          "for Kuudra and Dungeons M7.",
+          "Use **Check Free Carry** to view your status."
+        ]
+      });
+      actions.push(actionButton(`${CARRY_PREFIX}check_free`, "Check Free Carry", ButtonStyle.Secondary));
+    }
+
+    const panel = makePanel({
+      title: "Carry Request Dashboard",
+      status: viewKey === "overview" ? null : viewKey,
+      sections: panelSections,
+      actions,
+      accentColor: 0x5865f2
+    });
+
+    if (viewKey === "overview") {
+      for (const [category, items] of byCategory.entries()) {
+        const options = items.slice(0, 25).map((item) => ({
+          label: `${item.carry_type} ${item.tier}`.slice(0, 100),
+          description: `Price: ${this.formatCoinsShort(item.price)} each`.slice(0, 100),
+          value: `${item.carry_type}|${item.tier}`.slice(0, 100)
+        }));
+        if (options.length === 0) continue;
+        panel.addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`${CARRY_PREFIX}select:${category}`)
+              .setPlaceholder(`Select ${category} carry`)
+              .addOptions(options)
+          )
+        );
+      }
+    }
+
+    return panelPayload(panel);
+  }
+
+  async publishCarryDashboard(channelId = null, options = {}) {
     const targetId = channelId || this.getCarryDashboardChannelId();
     if (!targetId || !this.client) return null;
 
@@ -741,51 +1073,9 @@ class CarryService {
     let message = null;
     if (messageId) message = await channel.messages.fetch(messageId).catch(() => null);
 
-    const catalog = this.getEnabledCatalog();
-    const byCategory = new Map();
-    for (const item of catalog) {
-      const key = String(item.category || "other");
-      const list = byCategory.get(key) || [];
-      list.push(item);
-      byCategory.set(key, list);
-    }
-
-    const rows = [];
-    for (const [category, items] of byCategory.entries()) {
-      const options = items.slice(0, 25).map((item) => ({
-        label: `${item.carry_type} ${item.tier}`.slice(0, 100),
-        description: `Price: ${this.formatCoinsShort(item.price)} each`.slice(0, 100),
-        value: `${item.carry_type}|${item.tier}`.slice(0, 100)
-      }));
-      if (options.length === 0) continue;
-
-      rows.push(
-        new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${CARRY_PREFIX}select:${category}`)
-            .setPlaceholder(`Select ${category} carry`)
-            .addOptions(options)
-        )
-      );
-    }
-
-    rows.push(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}check_free`).setLabel("Check Free Carry").setStyle(ButtonStyle.Secondary)
-      )
-    );
-
-    const payload = {
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x5865f2)
-          .setTitle("Carry Request Dashboard")
-          .setDescription(
-            "Select a carry from the dropdown, then enter amount.\nFree carry is available only for verified users (default: 1/week UTC) and is excluded for **Kuudra** and **Dungeons M7**.\nUse **Check Free Carry** to view your status."
-          )
-      ],
-      components: rows
-    };
+    const viewKey = String(options.viewKey || "overview");
+    const page = Math.max(1, Number(options.page || 1));
+    const payload = this.buildCarryDashboardPanel({ viewKey, page });
 
     if (message && typeof message.edit === "function") {
       await message.edit(payload).catch(() => {});
@@ -797,7 +1087,7 @@ class CarryService {
     return message;
   }
 
-  async publishCarrierDashboard(channelId = null) {
+  async publishCarrierDashboard(channelId = null, options = {}) {
     const targetId = channelId || this.getCarrierDashboardChannelId();
     if (!targetId || !this.client) return null;
 
@@ -807,53 +1097,62 @@ class CarryService {
     this.setCarrierDashboardChannelId(channel.id);
 
     const rows = this.getQueueRows();
-    const queueText = rows.length
-      ? rows
-          .slice(0, 12)
-          .map((row, i) => {
-            const paidFlag = Number(row.is_paid) ? "[PAID]" : Number(row.is_free) ? "[FREE]" : "[STD]";
-            return `${i + 1}. #${row.carry_id} ${paidFlag} ${row.carry_type} ${row.tier} x${row.amount} | <@${row.customer_discord_id}>`;
-          })
-          .join("\n")
-      : "Queue is empty.";
+    const paged = this.paginateRows(rows, Number(options?.page || 1), 10);
+    const queueLines = paged.items.length
+      ? paged.items.map((row) => {
+          const paidFlag = Number(row.is_paid) ? "PAID" : Number(row.is_free) ? "FREE" : "STD";
+          return `- #${row.carry_id} [${paidFlag}] ${row.carry_type} ${row.tier} x${row.amount} | <@${row.customer_discord_id}>`;
+        })
+      : ["Queue is empty."];
 
-    const components = [];
-    if (rows.length > 0) {
-      const options = rows.slice(0, 25).map((row) => {
-        const paidFlag = Number(row.is_paid) ? "PAID" : Number(row.is_free) ? "FREE" : "STD";
-        return {
-          label: `#${row.carry_id} ${row.carry_type} ${row.tier} x${row.amount}`.slice(0, 100),
-          description: `${paidFlag} | prio ${Math.round(Number(row.priority_score || 0))}`.slice(0, 100),
-          value: String(row.carry_id)
-        };
-      });
-      components.push(
+    const panel = makePanel({
+      title: "Carrier Dashboard",
+      status: paged.totalPages > 1 ? `page ${paged.page}/${paged.totalPages}` : null,
+      topRows: [
         new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`${CARRY_PREFIX}carrier_pick`)
-            .setPlaceholder("Choose a carry to claim")
-            .addOptions(options)
+          actionButton(`${CARRY_PREFIX}claim`, "Claim by ID", ButtonStyle.Success),
+          actionButton(`${CARRY_PREFIX}carrier_refresh`, "Refresh", ButtonStyle.Secondary)
         )
-      );
-    }
-
-    components.push(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim`).setLabel("Claim by ID").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}carrier_refresh`).setLabel("Refresh").setStyle(ButtonStyle.Secondary)
-      )
-    );
-
-    const payload = {
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setTitle("Carrier Dashboard")
-          .setDescription(queueText)
-          .setFooter({ text: "Use dropdown for quick claim, or Claim by ID." })
       ],
-      components
-    };
+      sections: [
+        { title: "Queue", lines: queueLines },
+        {
+          title: "Live Metrics",
+          lines: [`Queue Size: **${rows.length}**`, `Active Carries: **${rows.filter((r) => ["queued", "claimed", "in_progress", "pending_confirm"].includes(String(r.status))).length}**`]
+        }
+      ],
+      actions: [
+        actionButton(`${CARRY_PREFIX}bulk:claim_next_3`, "Claim Next 3", ButtonStyle.Primary),
+        actionButton(`${CARRY_PREFIX}bulk:close_completed`, "Close Completed", ButtonStyle.Danger)
+      ],
+      nav:
+        paged.totalPages > 1
+          ? [
+              actionButton(`${CARRY_PREFIX}page:carrier_dashboard:${Math.max(1, paged.page - 1)}`, "Prev", ButtonStyle.Secondary),
+              actionButton(`${CARRY_PREFIX}jump:carrier_dashboard`, "Jump", ButtonStyle.Primary),
+              actionButton(`${CARRY_PREFIX}page:carrier_dashboard:${paged.page + 1}`, "Next", ButtonStyle.Secondary)
+            ]
+          : [],
+      accentColor: 0x2ecc71,
+      footer: "Quick claim via dropdown, or use Claim by ID."
+    });
+
+    const container = new ContainerBuilder(panel.toJSON());
+    const selectOptions =
+      paged.items.length > 0
+        ? paged.items.slice(0, 25).map((row) => ({
+            label: `#${row.carry_id} ${row.carry_type} ${row.tier} x${row.amount}`.slice(0, 100),
+            description: `prio ${Math.round(Number(row.priority_score || 0))}`.slice(0, 100),
+            value: String(row.carry_id)
+          }))
+        : [{ label: "No queued carries", description: "Queue is currently empty.", value: "none" }];
+    const picker = new StringSelectMenuBuilder()
+      .setCustomId(`${CARRY_PREFIX}carrier_pick`)
+      .setPlaceholder(paged.items.length > 0 ? "Choose a carry to claim" : "Queue is empty")
+      .addOptions(selectOptions);
+    if (paged.items.length === 0) picker.setDisabled(true);
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(picker));
+    const payload = panelPayload(container);
 
     const messageId = this.db.getBinding("carrier_dashboard_message_id", null);
     let message = null;
@@ -869,7 +1168,7 @@ class CarryService {
     return message;
   }
 
-  async publishCarrierStatsDashboard(channelId = null) {
+  async publishCarrierStatsDashboard(channelId = null, options = {}) {
     const targetId = channelId || this.getCarrierStatsChannelId();
     if (!targetId || !this.client) return null;
 
@@ -897,25 +1196,37 @@ class CarryService {
       )
       .all();
 
-    const description =
-      rows.length === 0
-        ? "No carrier stats yet."
-        : rows
-            .map((row, i) => {
-              const avgMinutes = row.completed_count > 0 ? Math.round(Number(row.total_duration_ms || 0) / Number(row.completed_count) / 60000) : 0;
-              const acceptance = Math.round(Number(row.acceptance_rate || 0) * 100);
-              const rating = Number(row.avg_rating || 0);
-              const tickets = Number(row.completed_tickets_count || row.completed_count || 0);
-              const actualCarrys = Number(row.actual_carries_count || 0);
-              const score = Number(row.score_total || 0);
-              return `${i + 1}. <@${row.user_id}> | tickets: **${tickets}** | carrys: **${actualCarrys}** | score: **${Math.round(score)}** | avg: **${avgMinutes}m** | accept: **${acceptance}%** | rating: **${rating || "-"}**`;
-            })
-            .join("\n");
+    const paged = this.paginateRows(rows, Number(options.page || 1), 10);
+    const lines =
+      paged.items.length === 0
+        ? ["No carrier stats yet."]
+        : paged.items.map((row, i) => {
+            const avgMinutes = row.completed_count > 0 ? Math.round(Number(row.total_duration_ms || 0) / Number(row.completed_count) / 60000) : 0;
+            const acceptance = Math.round(Number(row.acceptance_rate || 0) * 100);
+            const rating = Number(row.avg_rating || 0);
+            const tickets = Number(row.completed_tickets_count || row.completed_count || 0);
+            const actualCarrys = Number(row.actual_carries_count || 0);
+            const score = Number(row.score_total || 0);
+            return `- ${i + 1 + (paged.page - 1) * 10}. <@${row.user_id}> | tickets: **${tickets}** | carries: **${actualCarrys}** | score: **${Math.round(score)}** | avg: **${avgMinutes}m** | accept: **${acceptance}%** | rating: **${rating || "-"}**`;
+          });
 
-    const payload = {
-      embeds: [new EmbedBuilder().setColor(0xf1c40f).setTitle("Carrier Stats").setDescription(description)],
-      components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${CARRY_PREFIX}stats_refresh`).setLabel("Refresh").setStyle(ButtonStyle.Secondary))]
-    };
+    const payload = panelPayload(
+      makePanel({
+        title: "Carrier Stats",
+        status: paged.totalPages > 1 ? `page ${paged.page}/${paged.totalPages}` : null,
+        sections: [{ title: "Leaderboard", lines }],
+        actions: [actionButton(`${CARRY_PREFIX}stats_refresh`, "Refresh", ButtonStyle.Secondary)],
+        nav:
+          paged.totalPages > 1
+            ? [
+                actionButton(`${CARRY_PREFIX}page:stats_dashboard:${Math.max(1, paged.page - 1)}`, "Prev", ButtonStyle.Secondary),
+                actionButton(`${CARRY_PREFIX}jump:stats_dashboard`, "Jump", ButtonStyle.Primary),
+                actionButton(`${CARRY_PREFIX}page:stats_dashboard:${paged.page + 1}`, "Next", ButtonStyle.Secondary)
+              ]
+            : [],
+        accentColor: 0xf1c40f
+      })
+    );
 
     const messageId = this.db.getBinding("carrier_stats_message_id", null);
     let message = null;
@@ -942,14 +1253,9 @@ class CarryService {
     const uuid = await getUUID(playerUsername).catch(() => null);
     if (!uuid) return null;
 
-    try {
-      const linked = JSON.parse(readFileSync("data/linked.json", "utf8"));
-      const discordId = linked?.[uuid];
-      if (!discordId) return null;
-      return { uuid, discordId };
-    } catch {
-      return null;
-    }
+    const discordId = getDiscordIdByUuid(uuid);
+    if (!discordId) return null;
+    return { uuid, discordId };
   }
 
   createCarryRequest({ guildId, customerUser, member, carryType, tier, amount, isPaid = false, source = "discord" }) {
@@ -1140,15 +1446,30 @@ class CarryService {
     }
 
     this.db.logEvent("carry.ticket_thread_missing", "carry", carryId, { ticketId });
+    let failureReason = null;
+    const lastFailure = this.db
+      .getConnection()
+      .prepare("SELECT payload_json FROM events WHERE event_type = 'ticket.thread_create_failed' AND entity_type = 'ticket' AND entity_id = ? ORDER BY id DESC LIMIT 1")
+      .get(String(ticketId));
+    if (lastFailure?.payload_json) {
+      try {
+        const payload = JSON.parse(String(lastFailure.payload_json));
+        if (payload?.error) failureReason = String(payload.error);
+      } catch {
+        failureReason = null;
+      }
+    }
     const dashboardId = this.getCarrierDashboardChannelId();
     if (dashboardId && this.client) {
       const channel = await this.client.channels.fetch(dashboardId).catch(() => null);
       if (channel && typeof channel.send === "function") {
         const staffRole = this.getStaffRoleIds()[0];
         const mention = staffRole ? `<@&${staffRole}> ` : "";
+        const forumId = this.ticketService?.getTicketLogsForumId?.() || "not set";
+        const reasonLine = failureReason ? ` Reason: ${failureReason}` : "";
         await channel
           .send({
-            content: `${mention}Carry #${carryId} created but no ticket forum thread was created. Check \`/setup ticket-logs\` and forum permissions.`
+            content: `${mention}Carry #${carryId} created but no ticket forum thread was created. Forum: \`${forumId}\`. Check \`/carry-setup\` (Channels -> Ticket Logs Forum) and forum permissions.${reasonLine}`
           })
           .catch(() => {});
       }
@@ -1321,6 +1642,25 @@ class CarryService {
     for (const id of targets) {
       await channel.permissionOverwrites.edit(id, overwrite).catch(() => {});
     }
+
+    const adminRoleIds = this.getAdminRoleIds(channel.guild || null);
+    for (const roleId of adminRoleIds) {
+      await channel.permissionOverwrites.edit(roleId, overwrite).catch(() => {});
+    }
+
+    const teamRoleIds = this.getTeamRoleIds(channel.guild || null);
+    for (const roleId of teamRoleIds) {
+      if (!adminRoleIds.includes(roleId)) {
+        await channel.permissionOverwrites.delete(roleId).catch(() => {});
+      }
+    }
+
+    const legacyStaffIds = this.getStaffRoleIds();
+    for (const roleId of legacyStaffIds) {
+      if (!adminRoleIds.includes(roleId) && !teamRoleIds.includes(roleId)) {
+        await channel.permissionOverwrites.delete(roleId).catch(() => {});
+      }
+    }
   }
 
   async claimCarry(carryId, carrierId) {
@@ -1371,6 +1711,26 @@ class CarryService {
       .prepare("UPDATE queue_entries SET state = ?, claimed_by_discord_id = CASE WHEN ? THEN claimed_by_discord_id ELSE NULL END WHERE carry_id = ?")
       .run(nextStatus, nextAssigned.length > 0 ? 1 : 0, carry.id);
     this.db.logEvent("carry.unclaimed", "carry", carry.id, { carrierId });
+    await this.syncCarryTicketIndicators(carry.id);
+    await this.publishCarrierDashboard();
+    await this.refreshExecutionPanel(carry.id).catch(() => {});
+    return { ok: true, carryId: carry.id };
+  }
+
+  async forceUnclaimCarry(carryId, actorId) {
+    const carry = this.getCarryById(carryId);
+    if (!carry) return { ok: false, reason: "Carry not found." };
+    if (!["queued", "claimed", "in_progress", "pending_confirm", "awaiting_rating"].includes(String(carry.status))) {
+      return { ok: false, reason: "Carry is not active." };
+    }
+
+    this.db.getConnection().prepare("UPDATE carries SET status = 'queued', assigned_carrier_discord_ids = '[]' WHERE id = ?").run(carry.id);
+    this.db
+      .getConnection()
+      .prepare("UPDATE queue_entries SET state = 'queued', claimed_by_discord_id = NULL, stale_notified = 0 WHERE carry_id = ?")
+      .run(carry.id);
+    this.touchCarryActivity(carry.id);
+    this.db.logEvent("carry.force_unclaimed", "carry", carry.id, { actorId });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
     await this.refreshExecutionPanel(carry.id).catch(() => {});
@@ -1431,7 +1791,7 @@ class CarryService {
     });
     const name = displayName;
 
-    const staffRoleIds = this.getStaffRoleIds();
+    const adminRoleIds = this.getAdminRoleIds(guild);
     const overwrites = [
       {
         id: guild.roles.everyone.id,
@@ -1456,7 +1816,7 @@ class CarryService {
       });
     }
 
-    for (const roleId of staffRoleIds) {
+    for (const roleId of adminRoleIds) {
       overwrites.push({
         id: roleId,
         type: OverwriteType.Role,
@@ -1494,11 +1854,13 @@ class CarryService {
       };
     }
 
-    const panelMessage = await channel.send({
-      embeds: [this.buildExecutionEmbed(carry)],
-      components: this.buildExecutionComponents(carry)
-    });
+    const panelMessage = await channel.send(this.buildExecutionPanelPayload(carry));
     this.db.getConnection().prepare("UPDATE carries SET execution_message_id = ? WHERE id = ?").run(panelMessage.id, carry.id);
+    const quickMessage = await channel.send(this.buildExecutionQuickPanelPayload(carry)).catch(() => null);
+    if (quickMessage?.id) {
+      this.setQuickPanelMessageId(carry.id, quickMessage.id);
+      await this.cleanupDuplicateQuickPanels(channel, carry, quickMessage.id).catch(() => {});
+    }
 
     return { ok: true, channel };
   }
@@ -1522,7 +1884,7 @@ class CarryService {
     return "customer";
   }
 
-  buildExecutionEmbed(carry) {
+  buildExecutionPanelPayload(carry) {
     const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
     const coverage = this.getPaymentCoverage(carry);
     const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
@@ -1534,40 +1896,196 @@ class CarryService {
     const bulkLabel = bulkPct > 0 ? `${bulkPct}%` : "None";
     const freeLabel = Number(carry?.is_free) === 1 || freeReduction > 0 ? `Yes (-${this.formatCoinsShort(freeReduction || 0)})` : "No";
 
-    return new EmbedBuilder()
-      .setColor(0x1abc9c)
-      .setTitle(`Carry #${carry.id}`)
-      .setDescription(`Type: **${carry.carry_type} ${carry.tier}**\nAmount: **${carry.amount}**\nFinal Price: **${this.formatCoinsShort(carry.final_price)}**`)
-      .addFields(
-        { name: "Customer", value: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown", inline: true },
-        { name: "Status", value: carry.status, inline: true },
-        { name: "Carrier(s)", value: carrierLabel, inline: false },
-        { name: "Unit Price", value: `${this.formatCoinsShort(carry.base_unit_price || 0)}`, inline: true },
-        { name: "Paid Amount", value: `${this.formatCoinsShort(carry.paid_amount || 0)}`, inline: true },
-        { name: "Remaining", value: `${this.formatCoinsShort(coverage.remainingPayment || 0)}`, inline: true },
-        { name: "Logged Runs", value: `${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}`, inline: true },
-        { name: "Base", value: `${this.formatCoinsShort(breakdown?.baseTotal ?? carry.base_total_price ?? 0)}`, inline: true },
-        { name: "Scope Discount", value: scopeLabel, inline: true },
-        { name: "Bulk Discount", value: bulkLabel, inline: true },
-        { name: "Free Carry Used", value: freeLabel, inline: true }
+    const status = String(carry.status || "queued").toLowerCase();
+    const statusIcon =
+      status === "completed" ? "⚫ Completed" : status === "pending_confirm" ? "🟡 Pending Confirm" : status === "cancelled" ? "🔴 Cancelled" : status === "queued" ? "🟡 Waiting for Carrier" : "🟢 In Progress";
+
+    const actions = this.buildExecutionComponents(carry);
+    const panel = makePanel({
+      title: `Carry #${carry.id}`,
+      status: statusIcon,
+      sections: [
+        {
+          title: "Customer Info",
+          lines: [`- Customer: ${carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown"}`, `- Order Type: **${carry.carry_type} ${carry.tier}**`, `- Amount: **${carry.amount}**`, `- Carrier(s): ${carrierLabel}`]
+        },
+        {
+          title: "Payment",
+          lines: [
+            `- Unit Price: **${this.formatCoinsShort(carry.base_unit_price || 0)}**`,
+            `- Total: **${this.formatCoinsShort(carry.final_price)}**`,
+            `- Paid: **${this.formatCoinsShort(carry.paid_amount || 0)}**`,
+            `- Remaining: **${this.formatCoinsShort(coverage.remainingPayment || 0)}**`
+          ]
+        },
+        {
+          title: "Progress",
+          lines: [
+            `- Runs Completed: **${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}**`,
+            `- Scope Discount: ${scopeLabel}`,
+            `- Bulk Discount: ${bulkLabel}`,
+            `- Free Carry Used: ${freeLabel}`
+          ]
+        }
+      ],
+      actions,
+      tabs: [
+        actionButton(`${CARRY_PREFIX}toggle:payment:${carry.id}`, "Payment Details", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}toggle:audit:${carry.id}`, "Audit Details", ButtonStyle.Secondary)
+      ],
+      accentColor: 0x1abc9c
+    });
+    return panelPayload(panel);
+  }
+
+  getQuickPanelMap() {
+    const raw = String(this.db.getBinding(CARRY_QUICK_PANEL_MAP_KEY, "{}") || "{}");
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  setQuickPanelMap(nextMap) {
+    this.db.setBinding(CARRY_QUICK_PANEL_MAP_KEY, JSON.stringify(nextMap || {}));
+  }
+
+  getQuickPanelMessageId(carryId) {
+    const map = this.getQuickPanelMap();
+    return map[String(carryId)] ? String(map[String(carryId)]) : null;
+  }
+
+  setQuickPanelMessageId(carryId, messageId) {
+    const map = this.getQuickPanelMap();
+    if (!messageId) {
+      delete map[String(carryId)];
+    } else {
+      map[String(carryId)] = String(messageId);
+    }
+    this.setQuickPanelMap(map);
+  }
+
+  extractComponentCustomIds(nodes, acc = []) {
+    if (!Array.isArray(nodes) || !nodes.length) return acc;
+    for (const node of nodes) {
+      if (!node) continue;
+      const customId = node.customId || node.custom_id || node?.data?.custom_id || null;
+      if (typeof customId === "string" && customId.length > 0) acc.push(customId);
+      if (Array.isArray(node.components) && node.components.length) {
+        this.extractComponentCustomIds(node.components, acc);
+      }
+      if (Array.isArray(node?.data?.components) && node.data.components.length) {
+        this.extractComponentCustomIds(node.data.components, acc);
+      }
+    }
+    return acc;
+  }
+
+  isQuickPanelMessageForCarry(message, carry) {
+    if (!message || !carry) return false;
+    if (!this.client?.user?.id || String(message.author?.id || "") !== String(this.client.user.id)) return false;
+    if (String(message.id) === String(carry.execution_message_id || "")) return false;
+
+    const carryId = Number(carry.id);
+    if (!Number.isInteger(carryId)) return false;
+
+    const allCustomIds = this.extractComponentCustomIds(message.components || []);
+    if (!allCustomIds.length) return false;
+    const carryCustomIds = allCustomIds.filter((id) => typeof id === "string" && id.endsWith(`:${carryId}`));
+    if (!carryCustomIds.length) return false;
+
+    const hasMainOnlyAction = carryCustomIds.some((id) => id.startsWith(`${CARRY_PREFIX}close_ticket:`) || id.startsWith(`${CARRY_PREFIX}reassign:`));
+    if (hasMainOnlyAction) return false;
+
+    return carryCustomIds.some(
+      (id) =>
+        id.startsWith(`${CARRY_PREFIX}claim:`) ||
+        id.startsWith(`${CARRY_PREFIX}assign:`) ||
+        id.startsWith(`${CARRY_PREFIX}reping:`) ||
+        id.startsWith(`${CARRY_PREFIX}log_runs:`) ||
+        id.startsWith(`${CARRY_PREFIX}mark_paid:`) ||
+        id.startsWith(`${CARRY_PREFIX}unclaim:`) ||
+        id.startsWith(`${CARRY_PREFIX}view:logs:`) ||
+        id.startsWith(`${CARRY_PREFIX}reopen:`)
+    );
+  }
+
+  async cleanupDuplicateQuickPanels(channel, carry, keepMessageId) {
+    if (!channel || !carry) return;
+    const fetched = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+    if (!fetched) return;
+
+    const keepId = keepMessageId ? String(keepMessageId) : null;
+    for (const msg of fetched.values()) {
+      if (!this.isQuickPanelMessageForCarry(msg, carry)) continue;
+      if (keepId && String(msg.id) === keepId) continue;
+      await msg.delete().catch(() => {});
+    }
+  }
+
+  buildExecutionQuickPanelPayload(carry) {
+    const coverage = this.getPaymentCoverage(carry);
+    const status = String(carry.status || "queued").toLowerCase();
+    const summary = [
+      `- Status: **${status}** | Runs: **${Number(carry.logged_runs || 0)}/${Number(carry.amount || 0)}**`,
+      `- Paid: **${this.formatCoinsShort(carry.paid_amount || 0)}** | Remaining: **${this.formatCoinsShort(coverage.remainingPayment || 0)}**`
+    ];
+
+    const actions = [];
+    if (["claimed", "in_progress", "pending_confirm", "awaiting_rating"].includes(status)) {
+      actions.push(
+        actionButton(`${CARRY_PREFIX}log_runs:${carry.id}`, "Log Runs", ButtonStyle.Primary),
+        actionButton(`${CARRY_PREFIX}mark_paid:${carry.id}`, "Mark Paid", ButtonStyle.Success),
+        actionButton(`${CARRY_PREFIX}reping:${carry.id}`, "Re-Ping Customer", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}unclaim:${carry.id}`, "Unclaim", ButtonStyle.Secondary)
       );
+    } else if (status === "queued") {
+      actions.push(
+        actionButton(`${CARRY_PREFIX}claim:${carry.id}`, "Claim Carry", ButtonStyle.Primary),
+        actionButton(`${CARRY_PREFIX}assign:${carry.id}`, "Assign Carrier", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}reping:${carry.id}`, "Re-Ping Carriers", ButtonStyle.Secondary)
+      );
+    } else if (["completed", "cancelled"].includes(status)) {
+      actions.push(actionButton(`${CARRY_PREFIX}view:logs:${carry.id}`, "View Logs", ButtonStyle.Secondary), actionButton(`${CARRY_PREFIX}reopen:${carry.id}`, "Reopen", ButtonStyle.Primary));
+    }
+
+    return panelPayload(
+      makePanel({
+        title: `Carry #${carry.id} Quick`,
+        sections: [{ title: "Summary", lines: summary }],
+        actions,
+        accentColor: 0x3498db
+      })
+    );
   }
 
   buildExecutionComponents(carry) {
     const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
-    const claimBtn =
-      assigned.length > 0
-        ? new ButtonBuilder().setCustomId(`${CARRY_PREFIX}unclaim:${carry.id}`).setLabel("Unclaim").setStyle(ButtonStyle.Secondary)
-        : new ButtonBuilder().setCustomId(`${CARRY_PREFIX}claim:${carry.id}`).setLabel("Claim").setStyle(ButtonStyle.Primary);
+    const status = String(carry.status || "queued").toLowerCase();
+    if (["completed", "cancelled"].includes(status)) {
+      return [
+        actionButton(`${CARRY_PREFIX}view:logs:${carry.id}`, "View Logs", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}reopen:${carry.id}`, "Reopen", ButtonStyle.Primary)
+      ];
+    }
+
+    if (assigned.length === 0 || status === "queued") {
+      return [
+        actionButton(`${CARRY_PREFIX}claim:${carry.id}`, "Claim Carry", ButtonStyle.Primary),
+        actionButton(`${CARRY_PREFIX}assign:${carry.id}`, "Assign Carrier", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}close_ticket:${carry.id}`, "Cancel Request", ButtonStyle.Danger)
+      ];
+    }
 
     return [
-      new ActionRowBuilder().addComponents(
-        claimBtn,
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_ticket:${carry.id}`).setLabel("Close Ticket").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}mark_paid:${carry.id}`).setLabel("Mark Paid").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}log_runs:${carry.id}`).setLabel("Log Runs").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`${CARRY_PREFIX}reping:${carry.id}`).setLabel("Reping").setStyle(ButtonStyle.Secondary)
-      )
+      actionButton(`${CARRY_PREFIX}log_runs:${carry.id}`, "Log Runs", ButtonStyle.Primary),
+      actionButton(`${CARRY_PREFIX}mark_paid:${carry.id}`, "Mark Paid", ButtonStyle.Success),
+      actionButton(`${CARRY_PREFIX}unclaim:${carry.id}`, "Unclaim", ButtonStyle.Secondary),
+      actionButton(`${CARRY_PREFIX}reassign:${carry.id}`, "Reassign", ButtonStyle.Secondary),
+      actionButton(`${CARRY_PREFIX}reping:${carry.id}`, "Re-Ping Customer", ButtonStyle.Secondary),
+      actionButton(`${CARRY_PREFIX}close_ticket:${carry.id}`, "Close Ticket", ButtonStyle.Danger)
     ];
   }
 
@@ -1576,9 +2094,36 @@ class CarryService {
     if (!carry?.execution_channel_id || !carry?.execution_message_id || !this.client) return;
     const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
     if (!channel || channel.type !== ChannelType.GuildText) return;
-    const message = await channel.messages.fetch(carry.execution_message_id).catch(() => null);
-    if (!message) return;
-    await message.edit({ embeds: [this.buildExecutionEmbed(carry)], components: this.buildExecutionComponents(carry) }).catch(() => {});
+    const mainPayload = this.buildExecutionPanelPayload(carry);
+    const mainMessage = await channel.messages.fetch(carry.execution_message_id).catch(() => null);
+    if (mainMessage) await mainMessage.edit(mainPayload).catch(() => {});
+
+    const quickPayload = this.buildExecutionQuickPanelPayload(carry);
+    const quickId = this.getQuickPanelMessageId(carry.id);
+    let quickMessage = quickId ? await channel.messages.fetch(quickId).catch(() => null) : null;
+    if (!quickMessage) {
+      const posted = await channel.send(quickPayload).catch(() => null);
+      if (posted?.id) {
+        this.setQuickPanelMessageId(carry.id, posted.id);
+        await this.cleanupDuplicateQuickPanels(channel, carry, posted.id).catch(() => {});
+      }
+      return;
+    }
+
+    const latest = await channel.messages.fetch({ limit: 1 }).catch(() => null);
+    const latestId = latest?.first?.()?.id || null;
+    if (latestId && latestId !== quickMessage.id) {
+      const posted = await channel.send(quickPayload).catch(() => null);
+      if (posted?.id) {
+        this.setQuickPanelMessageId(carry.id, posted.id);
+        await quickMessage.delete().catch(() => {});
+        await this.cleanupDuplicateQuickPanels(channel, carry, posted.id).catch(() => {});
+      }
+      return;
+    }
+
+    await quickMessage.edit(quickPayload).catch(() => {});
+    await this.cleanupDuplicateQuickPanels(channel, carry, quickMessage.id).catch(() => {});
   }
 
   safePriceBreakdown(raw) {
@@ -1753,6 +2298,7 @@ class CarryService {
     }
 
     await this.closeExecutionChannel(carry.execution_channel_id, { immediate: Boolean(options.immediateDelete) });
+    this.setQuickPanelMessageId(carry.id, null);
     this.db.logEvent("carry.cancelled", "carry", carry.id, { actorId });
     await this.syncCarryTicketIndicators(carry.id);
     await this.publishCarrierDashboard();
@@ -1767,9 +2313,15 @@ class CarryService {
     const delayMs = options.immediate ? 1000 : Math.max(10000, this.getCarryAutoDeleteMs());
     if (options.announce) {
       await channel
-        .send({
-          embeds: [new EmbedBuilder().setColor(0x95a5a6).setTitle("Carry Completed").setDescription(`Closing ticket in ${Math.round(delayMs / 1000)}s.`)]
-        })
+        .send(
+          panelPayload(
+            makePanel({
+              title: "Carry Completed",
+              sections: [{ title: "Channel Closure", lines: [`Closing ticket in ${Math.round(delayMs / 1000)}s.`] }],
+              accentColor: 0x95a5a6
+            })
+          )
+        )
         .catch(() => {});
     }
 
@@ -1886,20 +2438,19 @@ class CarryService {
     const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
     if (!channel || channel.type !== ChannelType.GuildText) return;
     await channel.send({
-      content: `<@${actorId}>`,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe67e22)
-          .setTitle(`Run Log Warning • Carry #${carry.id}`)
-          .setDescription(warnings.join("\n"))
-      ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}confirm_log_runs:${carry.id}:${addRuns}:${actorId}`).setLabel("Confirm").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}cancel_log_runs:${carry.id}:${actorId}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}warn_add_paid:${carry.id}:${actorId}`).setLabel("Forgot Paid Amount").setStyle(ButtonStyle.Primary)
-        )
-      ]
+      ...panelPayload(
+        makePanel({
+          title: `Run Log Warning - Carry #${carry.id}`,
+          status: "Confirmation Required",
+          sections: [{ title: "Warnings", lines: [`- Requested by: <@${actorId}>`, ...warnings.map((w) => `- ${w}`)] }],
+          actions: [
+            actionButton(`${CARRY_PREFIX}confirm_log_runs:${carry.id}:${addRuns}:${actorId}`, "Confirm", ButtonStyle.Success),
+            actionButton(`${CARRY_PREFIX}cancel_log_runs:${carry.id}:${actorId}`, "Cancel", ButtonStyle.Secondary),
+            actionButton(`${CARRY_PREFIX}warn_add_paid:${carry.id}:${actorId}`, "Forgot Paid Amount", ButtonStyle.Primary)
+          ],
+          accentColor: 0xe67e22
+        })
+      )
     });
   }
 
@@ -1909,19 +2460,28 @@ class CarryService {
     const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
     if (!channel || channel.type !== ChannelType.GuildText) return;
     await channel.send({
-      content: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : undefined,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe74c3c)
-          .setTitle(`Over-Target Run Confirmation • Carry #${carry.id}`)
-          .setDescription(`Carrier is trying to log beyond requested runs.\nPending add: **${carry.pending_log_runs}**\nCurrent: **${carry.logged_runs}/${carry.amount}**`)
-      ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}customer_confirm_overlog:${carry.id}`).setLabel("Confirm Extra Runs").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}customer_cancel_overlog:${carry.id}`).setLabel("Cancel").setStyle(ButtonStyle.Danger)
-        )
-      ]
+      ...panelPayload(
+        makePanel({
+          title: `Over-Target Run Confirmation - Carry #${carry.id}`,
+          status: "Customer Confirmation",
+          sections: [
+            {
+              title: "Pending",
+              lines: [
+                carry.customer_discord_id ? `- Customer: <@${carry.customer_discord_id}>` : "- Customer: Unknown",
+                `- Pending add: **${carry.pending_log_runs}**`,
+                `- Current: **${carry.logged_runs}/${carry.amount}**`,
+                "- Carrier is trying to log beyond requested runs."
+              ]
+            }
+          ],
+          actions: [
+            actionButton(`${CARRY_PREFIX}customer_confirm_overlog:${carry.id}`, "Confirm Extra Runs", ButtonStyle.Success),
+            actionButton(`${CARRY_PREFIX}customer_cancel_overlog:${carry.id}`, "Cancel", ButtonStyle.Danger)
+          ],
+          accentColor: 0xe74c3c
+        })
+      )
     });
   }
 
@@ -1996,9 +2556,23 @@ class CarryService {
 
     const message = await channel
       .send({
-        content: carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : undefined,
-        embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`Confirm Carry #${carry.id}`).setDescription("Carrier marked all runs complete. Confirm completion.")],
-        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${CARRY_PREFIX}confirm_complete:${carry.id}`).setLabel("Confirm Complete").setStyle(ButtonStyle.Success))]
+        ...panelPayload(
+          makePanel({
+            title: `Confirm Carry #${carry.id}`,
+            status: "Pending Customer Confirm",
+            sections: [
+              {
+                title: "Completion",
+                lines: [
+                  carry.customer_discord_id ? `- Customer: <@${carry.customer_discord_id}>` : "- Customer: Unknown",
+                  "Carrier marked all runs complete. Confirm completion."
+                ]
+              }
+            ],
+            actions: [actionButton(`${CARRY_PREFIX}confirm_complete:${carry.id}`, "Confirm Complete", ButtonStyle.Success)],
+            accentColor: 0x3498db
+          })
+        )
       })
       .catch(() => null);
     if (message) {
@@ -2014,17 +2588,29 @@ class CarryService {
 
     const message = await channel
       .send({
-        content: carry.customer_discord_id ? `<@${carry.customer_discord_id}> Please rate your carry experience.` : undefined,
-        embeds: [new EmbedBuilder().setColor(0xf39c12).setTitle(`Rate Carry #${carry.id}`).setDescription("Give a 1-5 rating for the carrier service.")],
-        components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:1`).setLabel("1").setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:2`).setLabel("2").setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:3`).setLabel("3").setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:4`).setLabel("4").setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`${CARRY_PREFIX}rate:${carry.id}:5`).setLabel("5").setStyle(ButtonStyle.Success)
-          )
-        ]
+        ...panelPayload(
+          makePanel({
+            title: `Rate Carry #${carry.id}`,
+            status: "Awaiting Rating",
+            sections: [
+              {
+                title: "Feedback",
+                lines: [
+                  carry.customer_discord_id ? `- Customer: <@${carry.customer_discord_id}>` : "- Customer: Unknown",
+                  "Please rate your carry experience (1-5)."
+                ]
+              }
+            ],
+            actions: [
+              actionButton(`${CARRY_PREFIX}rate:${carry.id}:1`, "1", ButtonStyle.Secondary),
+              actionButton(`${CARRY_PREFIX}rate:${carry.id}:2`, "2", ButtonStyle.Secondary),
+              actionButton(`${CARRY_PREFIX}rate:${carry.id}:3`, "3", ButtonStyle.Primary),
+              actionButton(`${CARRY_PREFIX}rate:${carry.id}:4`, "4", ButtonStyle.Success),
+              actionButton(`${CARRY_PREFIX}rate:${carry.id}:5`, "5", ButtonStyle.Success)
+            ],
+            accentColor: 0xf39c12
+          })
+        )
       })
       .catch(() => null);
     if (message) {
@@ -2080,50 +2666,87 @@ class CarryService {
     if (status.hasPartialPayment) reasons.push(`Remaining payment: **${this.formatCoinsShort(status.coverage?.remainingPayment || 0)}**`);
 
     await channel.send({
-      content: `<@${actorId}>`,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe67e22)
-          .setTitle(`Confirm Close • Carry #${carry.id}`)
-          .setDescription(`This ticket has progress/payment data.\n${reasons.join("\n")}\n\nConfirm to force-close and cancel.`)
-      ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_confirm:${carry.id}:${actorId}`).setLabel("Confirm Close").setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`${CARRY_PREFIX}close_cancel:${carry.id}:${actorId}`).setLabel("Keep Open").setStyle(ButtonStyle.Secondary)
-        )
-      ]
+      ...panelPayload(
+        makePanel({
+          title: `Confirm Close - Carry #${carry.id}`,
+          status: "Requires Confirmation",
+          sections: [
+            {
+              title: "Impact",
+              lines: [
+                `- Requested By: <@${actorId}>`,
+                "This ticket has progress/payment data.",
+                ...reasons.map((r) => `- ${r}`),
+                "",
+                "Confirm to force-close and cancel."
+              ]
+            }
+          ],
+          actions: [
+            actionButton(`${CARRY_PREFIX}close_confirm:${carry.id}:${actorId}`, "Confirm Close", ButtonStyle.Danger),
+            actionButton(`${CARRY_PREFIX}close_cancel:${carry.id}:${actorId}`, "Keep Open", ButtonStyle.Secondary)
+          ],
+          accentColor: 0xe67e22
+        })
+      )
     });
   }
 
   async repingCarriers(carryId, actorId, isStaffActor = false) {
     const carry = this.getCarryById(carryId);
     if (!carry) return { ok: false, reason: "Carry not found." };
+    const status = String(carry.status || "").toLowerCase();
     const isCustomer = String(carry.customer_discord_id) === String(actorId);
-    if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can reping." };
-    if (String(carry.status) !== "queued") return { ok: false, reason: "Reping is available only for unclaimed queued carries." };
+    const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
+    const isAssignedCarrier = assigned.includes(String(actorId));
 
-    const now = Date.now();
-    const ageMs = now - Number(carry.queued_at || carry.requested_at || now);
-    if (ageMs < 6 * 60 * 60 * 1000) return { ok: false, reason: "Reping is available after 6 hours unclaimed." };
-    if (carry.reping_last_at && now - Number(carry.reping_last_at) < 60 * 60 * 1000) return { ok: false, reason: "Reping cooldown active (1h)." };
-    if (!this.hadCarrierOnlineBetween(Number(carry.queued_at || carry.requested_at || now), now)) {
-      return { ok: false, reason: "No carriers were online during this unclaimed window." };
+    if (status === "queued") {
+      if (!isCustomer && !isStaffActor) return { ok: false, reason: "Only customer or staff can reping." };
+
+      const now = Date.now();
+      const ageMs = now - Number(carry.queued_at || carry.requested_at || now);
+      if (ageMs < 6 * 60 * 60 * 1000) return { ok: false, reason: "Reping is available after 6 hours unclaimed." };
+      if (carry.reping_last_at && now - Number(carry.reping_last_at) < 60 * 60 * 1000) return { ok: false, reason: "Reping cooldown active (1h)." };
+      if (!this.hadCarrierOnlineBetween(Number(carry.queued_at || carry.requested_at || now), now)) {
+        return { ok: false, reason: "No carriers were online during this unclaimed window." };
+      }
+
+      await this.ghostPingCarrierRole(carry.id);
+      this.db.getConnection().prepare("UPDATE carries SET reping_last_at = ? WHERE id = ?").run(now, carry.id);
+      this.touchCarryActivity(carry.id);
+      this.db.logEvent("carry.reping", "carry", carry.id, { actorId, mode: "carrier_queue_ping" });
+      if (carry.ticket_id && this.ticketService) {
+        await this.ticketService.mirrorMessage(carry.ticket_id, {
+          content: `Carrier reping requested for carry #${carry.id} by <@${actorId}>.`,
+          username: "Carry System",
+          avatarURL: null,
+          viaWebhook: true
+        });
+      }
+      return { ok: true };
     }
 
-    await this.ghostPingCarrierRole(carry.id);
-    this.db.getConnection().prepare("UPDATE carries SET reping_last_at = ? WHERE id = ?").run(now, carry.id);
-    this.touchCarryActivity(carry.id);
-    this.db.logEvent("carry.reping", "carry", carry.id, { actorId });
-    if (carry.ticket_id && this.ticketService) {
-      await this.ticketService.mirrorMessage(carry.ticket_id, {
-        content: `Carrier reping requested for carry #${carry.id} by <@${actorId}>.`,
-        username: "Carry System",
-        avatarURL: null,
-        viaWebhook: true
-      });
+    if (["claimed", "in_progress", "pending_confirm", "awaiting_rating"].includes(status)) {
+      if (!isAssignedCarrier && !isStaffActor) return { ok: false, reason: "Only assigned carrier or staff can re-ping the customer." };
+      if (!carry.customer_discord_id) return { ok: false, reason: "No customer linked to this carry." };
+      if (!carry.execution_channel_id || !this.client) return { ok: false, reason: "Execution channel is unavailable." };
+      const channel = await this.client.channels.fetch(carry.execution_channel_id).catch(() => null);
+      if (!channel || channel.type !== ChannelType.GuildText) return { ok: false, reason: "Execution channel is unavailable." };
+      await channel.send({ content: `<@${carry.customer_discord_id}>` }).catch(() => null);
+      this.touchCarryActivity(carry.id);
+      this.db.logEvent("carry.reping", "carry", carry.id, { actorId, mode: "customer_ping" });
+      if (carry.ticket_id && this.ticketService) {
+        await this.ticketService.mirrorMessage(carry.ticket_id, {
+          content: `Customer reping sent for carry #${carry.id} by <@${actorId}>.`,
+          username: "Carry System",
+          avatarURL: null,
+          viaWebhook: true
+        });
+      }
+      return { ok: true };
     }
-    return { ok: true };
+
+    return { ok: false, reason: "Reping is not available for this carry status." };
   }
 
   parseCarryFromModal(interaction) {
@@ -2151,6 +2774,194 @@ class CarryService {
   async handleComponent(interaction) {
     const parsed = CarryService.parseComponent(interaction.customId);
     if (!parsed) return false;
+
+    if (parsed.action === "admin_target") {
+      if (!this.isAdmin(interaction.member)) {
+        await interaction.reply(infoPayload({ title: "Not Allowed", lines: ["Only Service-Admin can use this panel."], ephemeral: true }));
+        return true;
+      }
+      const selected = String(interaction.values?.[0] || "");
+      const carryId = /^\d+$/.test(selected) ? Number(selected) : null;
+      this.setCarryAdminState(interaction.message?.id || "0", interaction.user?.id || "0", carryId);
+      await interaction.update(this.buildCarryAdminPanel({ messageId: interaction.message?.id || "0", actorId: interaction.user?.id || "0" })).catch(async () => {
+        await interaction.reply(infoPayload({ title: "Carry Admin", lines: ["Panel refreshed."], ephemeral: true }));
+      });
+      return true;
+    }
+
+    if (["admin_refresh", "admin_force_unclaim", "admin_force_reassign", "admin_view_logs"].includes(parsed.action)) {
+      if (!this.isAdmin(interaction.member)) {
+        await interaction.reply(infoPayload({ title: "Not Allowed", lines: ["Only Service-Admin can use this panel."], ephemeral: true }));
+        return true;
+      }
+
+      const messageId = interaction.message?.id || "0";
+      const actorId = interaction.user?.id || "0";
+      const state = this.getCarryAdminState(messageId, actorId);
+      const targetCarryId = Number(state.targetCarryId || 0);
+      const target = targetCarryId > 0 ? this.getCarryById(targetCarryId) : null;
+
+      if (parsed.action === "admin_refresh") {
+        await interaction.update(this.buildCarryAdminPanel({ messageId, actorId }));
+        return true;
+      }
+
+      if (!target) {
+        await interaction.reply(infoPayload({ title: "Carry Admin", lines: ["No valid carry selected."], ephemeral: true }));
+        return true;
+      }
+
+      if (parsed.action === "admin_force_unclaim") {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        const result = await this.forceUnclaimCarry(target.id, interaction.user.id);
+        await interaction.editReply(infoPayload({ title: "Force Unclaim", lines: [result.ok ? `Carry #${target.id} moved back to queue.` : result.reason], ephemeral: true }));
+        return true;
+      }
+
+      if (parsed.action === "admin_force_reassign") {
+        const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}admin_reassign:${target.id}`).setTitle(`Force Reassign #${target.id}`);
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId("carrier_ids").setLabel("Carrier IDs (comma separated)").setStyle(TextInputStyle.Short).setRequired(true)
+          )
+        );
+        await interaction.showModal(modal);
+        return true;
+      }
+
+      const transcript = await this.buildChannelTranscript(target.execution_channel_id);
+      await interaction.reply(
+        infoPayload({
+          title: `Carry #${target.id} Logs`,
+          lines: [transcript ? `\`\`\`\n${transcript.slice(0, 1800)}\n\`\`\`` : "No logs available."],
+          ephemeral: true
+        })
+      );
+      return true;
+    }
+
+    if (parsed.action === "view") {
+      const [scope, viewKey] = String(parsed.rawId || "").split(":");
+      const messageId = interaction.message?.id || "0";
+      const actorId = interaction.user?.id || "0";
+      this.setPanelState(scope, messageId, actorId, { viewKey: viewKey || "overview", page: 1 });
+      if (scope === "carry_dashboard") {
+        const payload = this.buildCarryDashboardPanel({ viewKey: viewKey || "overview", page: 1 });
+        await interaction.update(payload).catch(async () => {
+          await this.publishCarryDashboard(null, { viewKey: viewKey || "overview", page: 1 });
+        });
+        return true;
+      }
+      if (scope === "logs" && Number.isInteger(Number(viewKey))) {
+        const carryId = Number(viewKey);
+        const transcript = await this.buildChannelTranscript(this.getCarryById(carryId)?.execution_channel_id);
+        await interaction.reply(
+          infoPayload({
+            title: `Carry #${carryId} Logs`,
+            lines: [transcript ? `\`\`\`\n${transcript.slice(0, 1800)}\n\`\`\`` : "No logs available."],
+            ephemeral: true
+          })
+        );
+        return true;
+      }
+    }
+
+    if (parsed.action === "page") {
+      const [scope, nextPageRaw] = String(parsed.rawId || "").split(":");
+      const nextPage = Math.max(1, Number(nextPageRaw || 1));
+      const messageId = interaction.message?.id || "0";
+      const actorId = interaction.user?.id || "0";
+      const current = this.getPanelState(scope, messageId, actorId);
+      this.setPanelState(scope, messageId, actorId, { viewKey: current.viewKey, page: nextPage, expanded: current.expanded });
+
+      if (scope === "carry_dashboard") {
+        await interaction.update(this.buildCarryDashboardPanel({ viewKey: current.viewKey, page: nextPage }));
+        return true;
+      }
+      if (scope === "carrier_dashboard") {
+        await this.publishCarrierDashboard(null, { page: nextPage });
+        await interaction.reply(infoPayload({ title: "Carrier Dashboard", lines: [`Moved to page ${nextPage}.`], ephemeral: true }));
+        return true;
+      }
+      if (scope === "stats_dashboard") {
+        await this.publishCarrierStatsDashboard(null, { page: nextPage });
+        await interaction.reply(infoPayload({ title: "Carrier Stats", lines: [`Moved to page ${nextPage}.`], ephemeral: true }));
+        return true;
+      }
+    }
+
+    if (parsed.action === "jump") {
+      const [scope] = String(parsed.rawId || "").split(":");
+      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}jump:${scope}`).setTitle("Jump To Page");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("page").setLabel("Page").setStyle(TextInputStyle.Short).setRequired(true))
+      );
+      await interaction.showModal(modal);
+      return true;
+    }
+
+    if (parsed.action === "toggle") {
+      const [section, carryIdRaw] = String(parsed.rawId || "").split(":");
+      const carryId = Number(carryIdRaw);
+      const carry = this.getCarryById(carryId);
+      if (!carry) {
+        await interaction.reply(infoPayload({ title: "Toggle Failed", lines: ["Carry not found."], ephemeral: true }));
+        return true;
+      }
+
+      if (section === "payment") {
+        const breakdown = this.safePriceBreakdown(carry.price_breakdown_json);
+        await interaction.reply(
+          infoPayload({
+            title: `Payment Details - Carry #${carry.id}`,
+            lines: [
+              `Base Total: ${this.formatCoinsShort(breakdown?.baseTotal ?? carry.base_total_price ?? 0)}`,
+              `Scope Discount: ${Number(breakdown?.scopeDiscount?.percentage || 0)}%`,
+              `Bulk Discount: ${Number(breakdown?.bulkDiscount?.percentage || 0)}%`,
+              `Final: ${this.formatCoinsShort(carry.final_price)}`
+            ],
+            ephemeral: true
+          })
+        );
+        return true;
+      }
+
+      await interaction.reply(
+        infoPayload({
+          title: `Audit Details - Carry #${carry.id}`,
+          lines: [
+            `Requested: <t:${Math.floor(Number(carry.requested_at || Date.now()) / 1000)}:f>`,
+            `Started: ${carry.started_at ? `<t:${Math.floor(Number(carry.started_at) / 1000)}:f>` : "n/a"}`,
+            `Completed: ${carry.completed_at ? `<t:${Math.floor(Number(carry.completed_at) / 1000)}:f>` : "n/a"}`
+          ],
+          ephemeral: true
+        })
+      );
+      return true;
+    }
+
+    if (parsed.action === "bulk") {
+      if (!this.isStaff(interaction.member)) {
+        await interaction.reply(infoPayload({ title: "Not Allowed", lines: ["Only staff can run bulk actions."], ephemeral: true }));
+        return true;
+      }
+      const bulkAction = String(parsed.rawId || "");
+      if (["claim_next_3", "close_completed"].includes(bulkAction)) {
+        const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}bulk:${bulkAction}`).setTitle("Confirm Bulk Action");
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("confirm")
+              .setLabel("Type CONFIRM to continue")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder("CONFIRM")
+          )
+        );
+        await interaction.showModal(modal);
+        return true;
+      }
+    }
 
     if (parsed.action === "request") {
       const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}request`).setTitle("Request Carry");
@@ -2185,9 +2996,30 @@ class CarryService {
       const userId = interaction.user?.id;
       const status = this.getFreeCarryStatus(userId);
       const verified = this.isVerifiedForFreeCarry(interaction.member, userId);
-      await interaction.reply({
-        ephemeral: true,
-        content: `Week: \`${status.weekKey}\`\nVerified for free carry: **${verified ? "Yes" : "No"}**\nWeekly free carries: **${status.weeklyRemaining}/${status.limit}** remaining (${status.used} used).\nBonus credits: **${status.bonusRemaining}**\nTotal free carries available: **${status.totalRemaining}**\nNote: Free carry is excluded for **Kuudra** and **Dungeons M7**.`
+      await interaction.reply(
+        infoPayload({
+          title: "Free Carry Status",
+          lines: [
+            `- Week: **${status.weekKey}**`,
+            `- Verified: **${verified ? "Yes" : "No"}**`,
+            `- Weekly Free Carries: **${status.weeklyRemaining}/${status.limit}** remaining (${status.used} used)`,
+            `- Bonus Credits: **${status.bonusRemaining}**`,
+            `- Total Available: **${status.totalRemaining}**`,
+            "- Free carry is excluded for **Kuudra** and **Dungeons M7**."
+          ],
+          ephemeral: true
+        })
+      );
+      return true;
+    }
+
+    if (parsed.action === "carry_refresh") {
+      const messageId = interaction.message?.id || this.db.getBinding("carry_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const state = this.getPanelState("carry_dashboard", messageId, actorId);
+      await interaction.update(this.buildCarryDashboardPanel({ viewKey: state.viewKey, page: state.page })).catch(async () => {
+        await this.publishCarryDashboard(null, { viewKey: state.viewKey, page: state.page });
+        await interaction.reply(infoPayload({ title: "Carry Dashboard", lines: ["Dashboard refreshed."], ephemeral: true }));
       });
       return true;
     }
@@ -2218,7 +3050,7 @@ class CarryService {
       }
 
       const result = await this.claimCarry(carryId, interaction.user.id);
-      await interaction.reply({ content: result.ok ? `Claimed carry #${carryId}.` : result.reason, ephemeral: true });
+      await interaction.reply(infoPayload({ title: "Carrier Pick", lines: [result.ok ? `Claimed carry #${carryId}.` : result.reason], ephemeral: true }));
       return true;
     }
 
@@ -2302,7 +3134,22 @@ class CarryService {
       return true;
     }
 
-    if (["claim", "unclaim", "close_ticket", "reping"].includes(parsed.action) && parsed.carryId !== null) {
+    if (["assign", "reassign"].includes(parsed.action) && parsed.carryId !== null) {
+      if (!this.isAdmin(interaction.member)) {
+        await interaction.reply({ content: "Only Service-Admin can reassign carriers.", ephemeral: true });
+        return true;
+      }
+      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}reassign:${parsed.carryId}`).setTitle("Assign/Reassign Carriers");
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId("carrier_ids").setLabel("Carrier IDs (comma separated)").setStyle(TextInputStyle.Short).setRequired(true)
+        )
+      );
+      await interaction.showModal(modal);
+      return true;
+    }
+
+    if (["claim", "unclaim", "close_ticket", "reping", "reopen"].includes(parsed.action) && parsed.carryId !== null) {
       await interaction.deferReply({ ephemeral: true }).catch(() => {});
       if (!this.isCarrier(interaction.member) && !this.isStaff(interaction.member)) {
         if (parsed.action === "close_ticket" || parsed.action === "reping") {
@@ -2315,9 +3162,13 @@ class CarryService {
 
       let result = null;
       if (parsed.action === "claim") result = await this.claimCarry(parsed.carryId, interaction.user.id);
-      if (parsed.action === "unclaim") result = await this.unclaimCarry(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
+      if (parsed.action === "unclaim") result = await this.unclaimCarry(parsed.carryId, interaction.user.id, this.isAdmin(interaction.member));
       if (parsed.action === "close_ticket") result = await this.closeCarryTicket(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
       if (parsed.action === "reping") result = await this.repingCarriers(parsed.carryId, interaction.user.id, this.isStaff(interaction.member));
+      if (parsed.action === "reopen") {
+        const carry = this.getCarryById(parsed.carryId);
+        result = carry?.ticket_id ? await this.reopenCarryForTicket(carry.ticket_id, interaction.user.id) : { ok: false, reason: "No linked ticket found." };
+      }
 
       const doneText = parsed.action === "reping" ? `Reping sent for carry #${parsed.carryId}.` : `Action \`${parsed.action}\` applied on carry #${parsed.carryId}.`;
       await interaction.editReply({ content: result?.ok ? doneText : result?.reason || "Action failed." });
@@ -2454,6 +3305,134 @@ class CarryService {
     if (!interaction.customId?.startsWith(CARRY_MODAL_PREFIX)) return false;
 
     const action = interaction.customId.slice(CARRY_MODAL_PREFIX.length);
+    if (action.startsWith("bulk:")) {
+      if (!this.isStaff(interaction.member)) {
+        await interaction.reply(infoPayload({ title: "Not Allowed", lines: ["Only staff can run bulk actions."], ephemeral: true }));
+        return true;
+      }
+
+      const confirm = String(interaction.fields.getTextInputValue("confirm") || "").trim().toUpperCase();
+      if (confirm !== "CONFIRM") {
+        await interaction.reply(infoPayload({ title: "Bulk Action Canceled", lines: ["Confirmation phrase did not match."], ephemeral: true }));
+        return true;
+      }
+
+      const bulkAction = String(action.split(":")[1] || "");
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+      if (bulkAction === "claim_next_3") {
+        const rows = this.getQueueRows().slice(0, 3);
+        let claimed = 0;
+        let failed = 0;
+        const errorDetails = [];
+
+        for (const row of rows) {
+          const result = await this.claimCarry(Number(row.carry_id), interaction.user.id);
+          if (result?.ok) {
+            claimed += 1;
+          } else {
+            failed += 1;
+            if (errorDetails.length < 10) {
+              errorDetails.push(`#${Number(row.carry_id)}: ${result?.reason || "claim failed"}`);
+            }
+          }
+        }
+
+        this.db.logEvent("carry.bulk_claim_next_3", "carry", interaction.user.id, { scanned: rows.length, claimed, failed, errorDetails });
+        await interaction.editReply(
+          infoPayload({
+            title: "Bulk Claim",
+            lines: [`Claimed ${claimed}/${rows.length} carries.`, `Failed: ${failed}`, ...(errorDetails.length ? [`Details: ${errorDetails.join(" | ")}`] : [])],
+            ephemeral: true
+          })
+        );
+        return true;
+      }
+
+      if (bulkAction === "close_completed") {
+        const rows = this.db
+          .getConnection()
+          .prepare("SELECT id, execution_channel_id FROM carries WHERE status = 'completed' ORDER BY id DESC LIMIT 100")
+          .all();
+        let closed = 0;
+        let failed = 0;
+        const errorDetails = [];
+
+        for (const row of rows) {
+          if (!row.execution_channel_id) continue;
+          const closeResult = await this.closeExecutionChannel(row.execution_channel_id, { immediate: true }).catch((error) => ({
+            ok: false,
+            reason: error?.message || String(error)
+          }));
+          if (closeResult?.ok === false) {
+            failed += 1;
+            if (errorDetails.length < 10) {
+              errorDetails.push(`#${Number(row.id)}: ${closeResult?.reason || "close failed"}`);
+            }
+            continue;
+          }
+          this.db.getConnection().prepare("UPDATE carries SET execution_channel_id = NULL WHERE id = ?").run(row.id);
+          closed += 1;
+        }
+
+        this.db.logEvent("carry.bulk_close_completed", "carry", interaction.user.id, { scanned: rows.length, closed, failed, errorDetails });
+        await interaction.editReply(
+          infoPayload({
+            title: "Bulk Close",
+            lines: [`Scanned ${rows.length} completed carries.`, `Closed lingering channels: ${closed}`, `Failed: ${failed}`, ...(errorDetails.length ? [`Details: ${errorDetails.join(" | ")}`] : [])],
+            ephemeral: true
+          })
+        );
+        return true;
+      }
+
+      await interaction.editReply(infoPayload({ title: "Bulk Action", lines: ["Unknown bulk action."], ephemeral: true }));
+      return true;
+    }
+
+    if (action.startsWith("jump:")) {
+      const scope = String(action.split(":")[1] || "carry_dashboard");
+      const page = Math.max(1, Number(interaction.fields.getTextInputValue("page")));
+      const messageId = interaction.message?.id || this.db.getBinding("carry_dashboard_message_id", "0");
+      const actorId = interaction.user?.id || "0";
+      const current = this.getPanelState(scope, messageId, actorId);
+      this.setPanelState(scope, messageId, actorId, { viewKey: current.viewKey, page, expanded: current.expanded });
+
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      if (scope === "carry_dashboard") await this.publishCarryDashboard(null, { viewKey: current.viewKey, page });
+      if (scope === "carrier_dashboard") await this.publishCarrierDashboard(null, { page });
+      if (scope === "stats_dashboard") await this.publishCarrierStatsDashboard(null, { page });
+      await interaction.editReply(infoPayload({ title: "Jump Applied", lines: [`Moved to page ${page}.`], ephemeral: true }));
+      return true;
+    }
+
+    if (action.startsWith("admin_reassign:") || action.startsWith("reassign:")) {
+      if (!this.isAdmin(interaction.member)) {
+        await interaction.reply(infoPayload({ title: "Not Allowed", lines: ["Only Service-Admin can reassign carriers."], ephemeral: true }));
+        return true;
+      }
+      const carryId = Number(action.split(":")[1]);
+      const value = String(interaction.fields.getTextInputValue("carrier_ids") || "").trim();
+      const ids = value
+        .split(",")
+        .map((part) => part.trim())
+        .filter((id) => /^\d{17,20}$/.test(id));
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      const carry = this.getCarryById(carryId);
+      if (!carry) {
+        await interaction.editReply(infoPayload({ title: "Reassign Failed", lines: ["Carry not found."], ephemeral: true }));
+        return true;
+      }
+      this.db.getConnection().prepare("UPDATE carries SET assigned_carrier_discord_ids = ? WHERE id = ?").run(JSON.stringify(ids), carryId);
+      if (carry.execution_channel_id) {
+        await this.ensureExecutionChannelAccess(carry.execution_channel_id, carry, ids).catch(() => {});
+      }
+      this.db.logEvent("carry.reassigned", "carry", carryId, { actorId: interaction.user.id, ids });
+      await this.refreshExecutionPanel(carryId).catch(() => {});
+      await interaction.editReply(infoPayload({ title: "Reassigned", lines: [`Updated carriers for carry #${carryId}.`], ephemeral: true }));
+      return true;
+    }
+
     if (action.startsWith("mark_paid:")) {
       const carryId = Number(action.split(":")[1]);
       const amountRaw = interaction.fields.getTextInputValue("paid_amount");
@@ -2519,31 +3498,35 @@ class CarryService {
 
       const mins = Math.max(1, Math.round(created.eta.etaMs / 60000));
       const breakdown = created.discount;
-      await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x57f287)
-            .setTitle(`Carry Request #${created.carryId}`)
-            .setDescription("Queued successfully.")
-            .addFields(
-              { name: "Base Price", value: `${this.formatCoinsShort(breakdown.baseTotal)}`, inline: true },
-              { name: "Discount", value: `${this.formatCoinsShort(created.totalDiscount)}`, inline: true },
-              { name: "Final", value: `${this.formatCoinsShort(created.finalPrice)}`, inline: true },
-              { name: "ETA", value: `~${mins} min`, inline: true },
+      await interaction.editReply(
+        panelPayload(
+          makePanel({
+            title: `Carry Request #${created.carryId}`,
+            status: "Queued",
+            sections: [
               {
-                name: "Free Carry",
-                value: created.freeEligible
-                  ? `Applied (${created.freeSource || "weekly"})`
-                  : created.freeBlockedByType
-                    ? "Not available for Kuudra/M7"
-                    : created.freeBlockedByVerification
-                      ? "Requires verified account"
-                      : "Not available",
-                inline: true
+                title: "Pricing",
+                lines: [
+                  `- Base Price: **${this.formatCoinsShort(breakdown.baseTotal)}**`,
+                  `- Discount: **${this.formatCoinsShort(created.totalDiscount)}**`,
+                  `- Final: **${this.formatCoinsShort(created.finalPrice)}**`,
+                  `- ETA: **~${mins} min**`,
+                  `- Free Carry: **${
+                    created.freeEligible
+                      ? `Applied (${created.freeSource || "weekly"})`
+                      : created.freeBlockedByType
+                        ? "Not available for Kuudra/M7"
+                        : created.freeBlockedByVerification
+                          ? "Requires verified account"
+                          : "Not available"
+                  }**`
+                ]
               }
-            )
-        ]
-      });
+            ],
+            accentColor: 0x57f287
+          })
+        )
+      );
 
       return true;
     }

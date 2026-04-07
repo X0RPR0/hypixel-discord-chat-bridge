@@ -313,6 +313,12 @@ class CarryDatabase {
         updated_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS linked_accounts (
+        uuid TEXT PRIMARY KEY,
+        discord_id TEXT NOT NULL UNIQUE,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT NOT NULL,
@@ -326,6 +332,17 @@ class CarryDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sampled_at INTEGER NOT NULL,
         online_count INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ui_panel_state (
+        panel_scope TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        view_key TEXT NOT NULL DEFAULT 'overview',
+        page INTEGER NOT NULL DEFAULT 1,
+        expanded_json TEXT NOT NULL DEFAULT '[]',
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(panel_scope, message_id, actor_id)
       );
     `);
 
@@ -408,6 +425,47 @@ class CarryDatabase {
     this.getConnection()
       .prepare("INSERT INTO events (event_type, entity_type, entity_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(eventType, entityType, String(entityId), JSON.stringify(payload || {}), Date.now());
+  }
+
+  getUiPanelState({ panelScope, messageId, actorId, fallback = null }) {
+    if (!panelScope || !messageId || !actorId) return fallback;
+    const row = this.getConnection()
+      .prepare("SELECT * FROM ui_panel_state WHERE panel_scope = ? AND message_id = ? AND actor_id = ?")
+      .get(String(panelScope), String(messageId), String(actorId));
+    if (!row) return fallback;
+
+    let expanded = [];
+    try {
+      expanded = JSON.parse(row.expanded_json || "[]");
+    } catch {
+      expanded = [];
+    }
+
+    return {
+      viewKey: String(row.view_key || "overview"),
+      page: Math.max(1, Number(row.page || 1)),
+      expanded: Array.isArray(expanded) ? expanded : []
+    };
+  }
+
+  setUiPanelState({ panelScope, messageId, actorId, viewKey = "overview", page = 1, expanded = [] }) {
+    if (!panelScope || !messageId || !actorId) return;
+    this.getConnection()
+      .prepare(
+        `INSERT INTO ui_panel_state (panel_scope, message_id, actor_id, view_key, page, expanded_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(panel_scope, message_id, actor_id)
+         DO UPDATE SET view_key = excluded.view_key, page = excluded.page, expanded_json = excluded.expanded_json, updated_at = excluded.updated_at`
+      )
+      .run(
+        String(panelScope),
+        String(messageId),
+        String(actorId),
+        String(viewKey || "overview"),
+        Math.max(1, Number(page || 1)),
+        JSON.stringify(Array.isArray(expanded) ? expanded : []),
+        Date.now()
+      );
   }
 }
 

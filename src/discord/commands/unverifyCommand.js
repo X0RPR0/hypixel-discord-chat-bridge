@@ -1,7 +1,7 @@
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { SuccessEmbed, ErrorEmbed } = require("../../contracts/embedHandler.js");
 const { getUsername } = require("../../contracts/API/mowojangAPI.js");
-const { writeFileSync, readFileSync } = require("fs");
+const { getUuidByDiscordId, removeLinkByDiscordId } = require("../../contracts/linkedStore.js");
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 
 module.exports = {
@@ -11,23 +11,14 @@ module.exports = {
 
   execute: async (interaction) => {
     try {
-      const linkedData = readFileSync("data/linked.json");
-      if (!linkedData) {
-        throw new HypixelDiscordChatBridgeError("The linked data file does not exist. Please contact an administrator.");
-      }
-
-      const linked = JSON.parse(linkedData);
-      if (!linked) {
-        throw new HypixelDiscordChatBridgeError("The linked data file is malformed. Please contact an administrator.");
-      }
-
-      const uuid = linked[interaction.user.id];
-      if (uuid === undefined) {
+      const uuid = getUuidByDiscordId(interaction.user.id);
+      if (!uuid) {
         throw new HypixelDiscordChatBridgeError(`You are not verified. Please run /verify to continue.`);
       }
 
-      delete linked[interaction.user.id];
-      writeFileSync("data/linked.json", JSON.stringify(linked, null, 2));
+      if (!removeLinkByDiscordId(interaction.user.id)) {
+        throw new HypixelDiscordChatBridgeError("Linked account database is unavailable. Please try again later.");
+      }
 
       const updateRole = new SuccessEmbed(`You have successfully unlinked \`${await getUsername(uuid)}\`. Run \`/verify\` to link a new account.`, {
         text: `/help [command] for more information`

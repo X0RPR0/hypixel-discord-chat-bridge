@@ -7,10 +7,10 @@ const {
   isAllowedInvokerRank,
   rankupSingle,
   rankupSingleByUuid,
-  rankupAll,
-  readLinkedData
+  rankupAll
 } = require("../../contracts/rankupService.js");
 const { Embed, SuccessEmbed } = require("../../contracts/embedHandler.js");
+const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const { isGuildMember, isVerifiedMember } = require("../../contracts/verificaiton.js");
 
 function formatSingleResult(result) {
@@ -204,8 +204,7 @@ module.exports = {
       throw new HypixelDiscordChatBridgeError("You need to be a guild member to use this command.");
     }
 
-    const linked = readLinkedData();
-    const uuid = Object.entries(linked).find(([, value]) => value === interaction.user.id)?.[0];
+    const uuid = getUuidByDiscordId(interaction.user.id);
     if (!uuid) {
       throw new HypixelDiscordChatBridgeError("You are not linked to a Minecraft account.");
     }

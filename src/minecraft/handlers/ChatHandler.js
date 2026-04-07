@@ -11,6 +11,10 @@ const config = require("../../../config.json");
 const { readFileSync, writeFileSync, existsSync } = require("fs");
 const updateCommand = require("../../discord/commands/updateCommand.js");
 const activityTracker = require("../../discord/other/activityTracker.js");
+const { getDiscordIdByUuid } = require("../../contracts/linkedStore.js");
+const { carryDatabase } = require("../../discord/other/carryDatabase.js");
+
+const GUILD_MUTED_USERS_KEY = "guild_muted_users_json";
 
 class StateHandler extends eventHandler {
   constructor(minecraft, command, discord) {
@@ -505,6 +509,7 @@ class StateHandler extends eventHandler {
         .replace(/\[(.*?)\]/g, "")
         .trim()
         .split(/ +/g)[5];
+      await this.setGuildMutedUser(username, true).catch(() => {});
       return [
         this.minecraft.broadcastCleanEmbed({
           message: replaceVariables(messages.userMuteMessage, {
@@ -530,6 +535,7 @@ class StateHandler extends eventHandler {
         .replace(/\[(.*?)\]/g, "")
         .trim()
         .split(/ +/g)[3];
+      await this.setGuildMutedUser(username, false).catch(() => {});
       return [
         this.minecraft.broadcastCleanEmbed({
           message: replaceVariables(messages.userUnmuteMessage, {
@@ -961,6 +967,46 @@ class StateHandler extends eventHandler {
     return message.includes("Your mute will expire in") && !message.includes(":");
   }
 
+  getGuildMutedUsersSet() {
+    const raw = String(carryDatabase.getBinding(GUILD_MUTED_USERS_KEY, "[]") || "[]");
+    try {
+      const parsed = JSON.parse(raw);
+      return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item).toLowerCase()) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  saveGuildMutedUsersSet(set) {
+    carryDatabase.setBinding(GUILD_MUTED_USERS_KEY, JSON.stringify([...set]));
+  }
+
+  async setGuildMutedUser(username, muted) {
+    const clean = String(username || "")
+      .trim()
+      .replace(/[^\w]/g, "")
+      .toLowerCase();
+    if (!clean) return;
+
+    const mutedSet = this.getGuildMutedUsersSet();
+    let uuid = null;
+    try {
+      uuid = await getUUID(clean);
+    } catch {
+      uuid = null;
+    }
+
+    if (muted) {
+      if (uuid) mutedSet.add(String(uuid).toLowerCase());
+      mutedSet.add(clean);
+    } else {
+      if (uuid) mutedSet.delete(String(uuid).toLowerCase());
+      mutedSet.delete(clean);
+    }
+
+    this.saveGuildMutedUsersSet(mutedSet);
+  }
+
   isPlayerNotFound(message) {
     return message.startsWith(`Can't find a player by the name of`);
   }
@@ -1312,17 +1358,11 @@ class StateHandler extends eventHandler {
         uuid = await getUUID(uuid);
       }
 
-      const linkedData = readFileSync("data/linked.json");
-      if (linkedData === undefined) {
+      const discordId = getDiscordIdByUuid(uuid);
+      if (!discordId) {
         return;
       }
 
-      const linked = JSON.parse(linkedData.toString());
-      if (linked === undefined) {
-        return;
-      }
-
-      const discordId = linked[uuid];
       updateCommand.updateRoles({ discordId, uuid });
 
       console.log(`Updated roles for ${uuid}`);

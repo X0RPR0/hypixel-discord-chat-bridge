@@ -1,6 +1,28 @@
 const { ChannelType, SlashCommandBuilder } = require("discord.js");
-const { SuccessEmbed, ErrorEmbed } = require("../../contracts/embedHandler.js");
 const ms = require("ms");
+const { makePanel, panelPayload } = require("../other/componentsV2Panels.js");
+
+function successPayload(message, title = "Carry Admin") {
+  return panelPayload(
+    makePanel({
+      title,
+      status: "Success",
+      sections: [{ title: "Details", lines: [String(message || "Done.")] }],
+      accentColor: 0x57f287
+    })
+  );
+}
+
+function errorPayload(message, title = "Carry Admin") {
+  return panelPayload(
+    makePanel({
+      title,
+      status: "Error",
+      sections: [{ title: "Details", lines: [String(message || "Failed.")] }],
+      accentColor: 0xed4245
+    })
+  );
+}
 
 function parseDuration(input) {
   const parsed = ms(input);
@@ -282,7 +304,7 @@ module.exports = {
     const carryService = interaction.client.carryService;
     const ticketService = interaction.client.ticketService;
     if (!carryService || !ticketService) {
-      return interaction.editReply({ embeds: [new ErrorEmbed("Carry/Ticket services are not initialized.")] });
+      return interaction.editReply(errorPayload("Carry/Ticket services are not initialized."));
     }
 
     const group = interaction.options.getSubcommandGroup(false);
@@ -290,21 +312,19 @@ module.exports = {
     const now = Date.now();
 
     if (!group && sub === "help") {
-      return interaction.editReply({
-        embeds: [
-          new SuccessEmbed(
-            [
-              "**/carryadmin help**",
-              "`setup` - dashboards, logs forum, category, autodelete, transcript, carrier role",
-              "`catalog` - add/remove carries, set tier price, enable/disable",
-              "`queue` - enable/disable/reset/repair, role priority",
-              "`discount` - static/timed/bulk/stacking controls",
-              "`freecarry` - reset-weekly, set-limit, grant",
-              "`ticket` - mark-paid, log-runs, delete-old"
-            ].join("\n")
-          )
-        ]
-      });
+      return interaction.editReply(
+        successPayload(
+          [
+            "**/carryadmin help**",
+            "`setup` - dashboards, logs forum, category, autodelete, transcript, carrier role",
+            "`catalog` - add/remove carries, set tier price, enable/disable",
+            "`queue` - enable/disable/reset/repair, role priority",
+            "`discount` - static/timed/bulk/stacking controls",
+            "`freecarry` - reset-weekly, set-limit, grant",
+            "`ticket` - mark-paid, log-runs, delete-old"
+          ].join("\n")
+        )
+      );
     }
 
     if (group === "setup") {
@@ -312,72 +332,72 @@ module.exports = {
         const channel = interaction.options.getChannel("channel", true);
         carryService.setCarryDashboardChannelId(channel.id);
         await carryService.publishCarryDashboard(channel.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carry dashboard set to <#${channel.id}>.`)] });
+        return interaction.editReply(successPayload(`Carry dashboard set to <#${channel.id}>.`));
       }
 
       if (sub === "carrier-dashboard") {
         const channel = interaction.options.getChannel("channel", true);
         carryService.setCarrierDashboardChannelId(channel.id);
         await carryService.publishCarrierDashboard(channel.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier dashboard set to <#${channel.id}>.`)] });
+        return interaction.editReply(successPayload(`Carrier dashboard set to <#${channel.id}>.`));
       }
 
       if (sub === "carrier-stats") {
         const channel = interaction.options.getChannel("channel", true);
         carryService.setCarrierStatsChannelId(channel.id);
         await carryService.publishCarrierStatsDashboard(channel.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier stats dashboard set to <#${channel.id}>.`)] });
+        return interaction.editReply(successPayload(`Carrier stats dashboard set to <#${channel.id}>.`));
       }
 
       if (sub === "ticket-dashboard") {
         const channel = interaction.options.getChannel("channel", true);
         ticketService.setTicketDashboardChannelId(channel.id);
         await ticketService.publishDashboard(channel.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Ticket dashboard set to <#${channel.id}>.`)] });
+        return interaction.editReply(successPayload(`Ticket dashboard set to <#${channel.id}>.`));
       }
 
       if (sub === "ticket-logs") {
         const forum = interaction.options.getChannel("forum_channel", true);
         ticketService.setTicketLogsForumId(forum.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Ticket logs forum set to <#${forum.id}>.`)] });
+        return interaction.editReply(successPayload(`Ticket logs forum set to <#${forum.id}>.`));
       }
 
       if (sub === "carry-category") {
         const category = interaction.options.getChannel("category", true);
         carryService.setCarryCategoryId(category.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carry category set to **${category.name}**.`)] });
+        return interaction.editReply(successPayload(`Carry category set to **${category.name}**.`));
       }
 
       if (sub === "carry-autodelete") {
         const time = interaction.options.getString("time", true);
         const parsed = ms(time);
         if (!parsed || parsed <= 0) {
-          return interaction.editReply({ embeds: [new ErrorEmbed("Invalid duration. Example: `30m`, `2h`.")] });
+          return interaction.editReply(errorPayload("Invalid duration. Example: `30m`, `2h`."));
         }
         carryService.setCarryAutoDelete(parsed);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carry autodelete set to **${time}**.`)] });
+        return interaction.editReply(successPayload(`Carry autodelete set to **${time}**.`));
       }
 
       if (sub === "carry-transcript") {
         const enabled = interaction.options.getBoolean("enabled", true);
         carryService.setCarryTranscriptEnabled(enabled);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carry transcript logging ${enabled ? "enabled" : "disabled"}.`)] });
+        return interaction.editReply(successPayload(`Carry transcript logging ${enabled ? "enabled" : "disabled"}.`));
       }
 
       if (sub === "carrier-role-set") {
         const role = interaction.options.getRole("role", true);
         carryService.setCarrierClaimRoleId(role.id);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Carrier claim role set to <@&${role.id}>.`)] });
+        return interaction.editReply(successPayload(`Carrier claim role set to <@&${role.id}>.`));
       }
 
       if (sub === "carrier-role-show") {
         const roleId = carryService.getCarrierClaimRoleId();
-        return interaction.editReply({ embeds: [new SuccessEmbed(roleId ? `Carrier claim role: <@&${roleId}>` : "Carrier claim role override is not set.")] });
+        return interaction.editReply(successPayload(roleId ? `Carrier claim role: <@&${roleId}>` : "Carrier claim role override is not set."));
       }
 
       if (sub === "carrier-role-clear") {
         carryService.setCarrierClaimRoleId(null);
-        return interaction.editReply({ embeds: [new SuccessEmbed("Carrier claim role override cleared.")] });
+        return interaction.editReply(successPayload("Carrier claim role override cleared."));
       }
     }
 
@@ -386,87 +406,87 @@ module.exports = {
         const name = interaction.options.getString("name", true);
         const tiers = interaction.options.getString("tiers", true);
         if (String(name).toLowerCase() === "slayer_blaze" && String(tiers).toLowerCase().split(",").map((x) => x.trim()).some((x) => ["5", "t5"].includes(x))) {
-          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 is not available and cannot be added.")] });
+          return interaction.editReply(errorPayload("Blaze tier 5 is not available and cannot be added."));
         }
         const count = carryService.addCarryTypeWithTiers(name, tiers);
         await carryService.publishCarryDashboard().catch(() => {});
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Added/updated ${count} tier(s) for **${name}**.`)] });
+        return interaction.editReply(successPayload(`Added/updated ${count} tier(s) for **${name}**.`));
       }
 
       if (sub === "remove") {
         const name = interaction.options.getString("name", true);
         const changes = carryService.removeCarryType(name);
         await carryService.publishCarryDashboard().catch(() => {});
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Removed ${changes} carry tier entries for **${name}**.`)] });
+        return interaction.editReply(successPayload(`Removed ${changes} carry tier entries for **${name}**.`));
       }
 
       if (sub === "price") {
         const type = interaction.options.getString("type", true);
         const tier = interaction.options.getString("tier", true);
         if (isBlazeT5(type, tier)) {
-          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 is not available and cannot be priced.")] });
+          return interaction.editReply(errorPayload("Blaze tier 5 is not available and cannot be priced."));
         }
         const priceRaw = interaction.options.getString("price", true);
         const price = typeof carryService.parseCoinsInput === "function" ? carryService.parseCoinsInput(priceRaw) : Number(priceRaw);
         if (!Number.isFinite(price) || price < 0) {
-          return interaction.editReply({ embeds: [new ErrorEmbed("Invalid price. Use values like `400000`, `400k`, `1.5m`.")] });
+          return interaction.editReply(errorPayload("Invalid price. Use values like `400000`, `400k`, `1.5m`."));
         }
         const updated = carryService.setCarryPrice(type, tier, price);
-        if (!updated) return interaction.editReply({ embeds: [new ErrorEmbed("Carry type/tier not found.")] });
+        if (!updated) return interaction.editReply(errorPayload("Carry type/tier not found."));
         await carryService.publishCarryDashboard().catch(() => {});
         const pretty = typeof carryService.formatCoinsShort === "function" ? carryService.formatCoinsShort(price) : String(price);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Set **${type} ${tier}** price to ${pretty}.`)] });
+        return interaction.editReply(successPayload(`Set **${type} ${tier}** price to ${pretty}.`));
       }
 
       if (sub === "enable") {
         const type = interaction.options.getString("type", true);
         const changes = carryService.setCarryEnabled(type, true);
         if (!changes && String(type).toLowerCase() === "slayer_blaze") {
-          return interaction.editReply({ embeds: [new ErrorEmbed("Blaze tier 5 remains blocked. Only tiers 1-4 can be enabled.")] });
+          return interaction.editReply(errorPayload("Blaze tier 5 remains blocked. Only tiers 1-4 can be enabled."));
         }
         await carryService.publishCarryDashboard().catch(() => {});
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Enabled ${changes} entries for **${type}**.`)] });
+        return interaction.editReply(successPayload(`Enabled ${changes} entries for **${type}**.`));
       }
 
       if (sub === "disable") {
         const type = interaction.options.getString("type", true);
         const changes = carryService.setCarryEnabled(type, false);
         await carryService.publishCarryDashboard().catch(() => {});
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Disabled ${changes} entries for **${type}**.`)] });
+        return interaction.editReply(successPayload(`Disabled ${changes} entries for **${type}**.`));
       }
     }
 
     if (group === "queue") {
       if (sub === "enable") {
         carryService.setQueueEnabled(true);
-        return interaction.editReply({ embeds: [new SuccessEmbed("Queue enabled.")] });
+        return interaction.editReply(successPayload("Queue enabled."));
       }
 
       if (sub === "disable") {
         carryService.setQueueEnabled(false);
-        return interaction.editReply({ embeds: [new SuccessEmbed("Queue disabled.")] });
+        return interaction.editReply(successPayload("Queue disabled."));
       }
 
       if (sub === "reset") {
         carryService.resetQueue();
         await carryService.publishCarrierDashboard();
-        return interaction.editReply({ embeds: [new SuccessEmbed("Queue reset complete.")] });
+        return interaction.editReply(successPayload("Queue reset complete."));
       }
 
       if (sub === "repair") {
         const result = await carryService.reconcileMissingCarryArtifacts();
         await carryService.publishCarrierDashboard().catch(() => {});
         const details = Array.isArray(result.errorDetails) && result.errorDetails.length ? `\nDetails: ${result.errorDetails.join(" | ")}` : "";
-        return interaction.editReply({
-          embeds: [new SuccessEmbed(`Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.${details}`)]
-        });
+        return interaction.editReply(
+          successPayload(`Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.${details}`)
+        );
       }
 
       if (sub === "priority") {
         const role = interaction.options.getRole("role", true);
         const value = interaction.options.getNumber("value", true);
         carryService.setRolePriority(role.id, value);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Role <@&${role.id}> priority set to ${value}.`)] });
+        return interaction.editReply(successPayload(`Role <@&${role.id}> priority set to ${value}.`));
       }
     }
 
@@ -475,22 +495,22 @@ module.exports = {
         const amount = interaction.options.getInteger("amount", true);
         const percentage = interaction.options.getNumber("percentage", true);
         const id = carryService.addDiscountRule({ kind: "static", scope: "global", minAmount: amount, percentage });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Static discount rule #${id} created for amount >= ${amount}.`)] });
+        return interaction.editReply(successPayload(`Static discount rule #${id} created for amount >= ${amount}.`));
       }
 
       if (sub === "remove") {
         const amount = interaction.options.getInteger("amount", true);
         const changes = carryService.removeStaticDiscountByAmount(amount);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Removed ${changes} static discount rule(s) for amount >= ${amount}.`)] });
+        return interaction.editReply(successPayload(`Removed ${changes} static discount rule(s) for amount >= ${amount}.`));
       }
 
       if (sub === "timed-global") {
         const percentage = interaction.options.getNumber("percentage", true);
         const duration = interaction.options.getString("duration", true);
         const durationMs = parseDuration(duration);
-        if (!durationMs) return interaction.editReply({ embeds: [new ErrorEmbed("Invalid duration.")] });
+        if (!durationMs) return interaction.editReply(errorPayload("Invalid duration."));
         const id = carryService.addDiscountRule({ kind: "timed", scope: "global", percentage, startsAt: now, endsAt: now + durationMs });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Timed global discount #${id} created.`)] });
+        return interaction.editReply(successPayload(`Timed global discount #${id} created.`));
       }
 
       if (sub === "timed-carry") {
@@ -499,9 +519,9 @@ module.exports = {
         const percentage = interaction.options.getNumber("percentage", true);
         const duration = interaction.options.getString("duration", true);
         const durationMs = parseDuration(duration);
-        if (!durationMs) return interaction.editReply({ embeds: [new ErrorEmbed("Invalid duration.")] });
+        if (!durationMs) return interaction.editReply(errorPayload("Invalid duration."));
         const id = carryService.addDiscountRule({ kind: "timed", scope: "carry", carryType: type, tier, percentage, startsAt: now, endsAt: now + durationMs });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Timed carry discount #${id} created.`)] });
+        return interaction.editReply(successPayload(`Timed carry discount #${id} created.`));
       }
 
       if (sub === "timed-category") {
@@ -509,9 +529,9 @@ module.exports = {
         const percentage = interaction.options.getNumber("percentage", true);
         const duration = interaction.options.getString("duration", true);
         const durationMs = parseDuration(duration);
-        if (!durationMs) return interaction.editReply({ embeds: [new ErrorEmbed("Invalid duration.")] });
+        if (!durationMs) return interaction.editReply(errorPayload("Invalid duration."));
         const id = carryService.addDiscountRule({ kind: "timed", scope: "category", category, percentage, startsAt: now, endsAt: now + durationMs });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Timed category discount #${id} created.`)] });
+        return interaction.editReply(successPayload(`Timed category discount #${id} created.`));
       }
 
       if (sub === "bulk-category") {
@@ -519,7 +539,7 @@ module.exports = {
         const amount = interaction.options.getInteger("amount", true);
         const percentage = interaction.options.getNumber("percentage", true);
         const id = carryService.addDiscountRule({ kind: "bulk", scope: "category", category, minAmount: amount, percentage });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Bulk category discount #${id} created.`)] });
+        return interaction.editReply(successPayload(`Bulk category discount #${id} created.`));
       }
 
       if (sub === "bulk-carry") {
@@ -528,28 +548,26 @@ module.exports = {
         const amount = interaction.options.getInteger("amount", true);
         const percentage = interaction.options.getNumber("percentage", true);
         const id = carryService.addDiscountRule({ kind: "bulk", scope: "carry", carryType: type, tier, minAmount: amount, percentage });
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Bulk carry discount #${id} created.`)] });
+        return interaction.editReply(successPayload(`Bulk carry discount #${id} created.`));
       }
 
       if (sub === "stacking") {
         const enabled = interaction.options.getBoolean("enabled", true);
         carryService.db.setBinding("discount_stacking_enabled", enabled);
-        return interaction.editReply({
-          embeds: [new SuccessEmbed(`Stacking ${enabled ? "enabled" : "disabled"}. Policy still enforces only bulk + one scope discount and no multi-scope stacking.`)]
-        });
+        return interaction.editReply(successPayload(`Stacking ${enabled ? "enabled" : "disabled"}. Policy still enforces only bulk + one scope discount and no multi-scope stacking.`));
       }
     }
 
     if (group === "freecarry") {
       if (sub === "reset-weekly") {
         carryService.resetFreeCarryWeekly();
-        return interaction.editReply({ embeds: [new SuccessEmbed("Weekly reset marker recorded.")] });
+        return interaction.editReply(successPayload("Weekly reset marker recorded."));
       }
 
       if (sub === "set-limit") {
         const amount = interaction.options.getInteger("amount", true);
         carryService.setFreeCarryLimit(amount);
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Free carry weekly limit set to ${amount}.`)] });
+        return interaction.editReply(successPayload(`Free carry weekly limit set to ${amount}.`));
       }
 
       if (sub === "grant") {
@@ -557,9 +575,9 @@ module.exports = {
         const amount = interaction.options.getInteger("amount", true);
         const result = carryService.grantFreeCarryBonus(user.id, amount);
         if (!result.ok) {
-          return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+          return interaction.editReply(errorPayload(result.reason));
         }
-        return interaction.editReply({ embeds: [new SuccessEmbed(`Granted ${amount} bonus free carry credit(s) to <@${user.id}>. Remaining bonus: ${result.remaining}.`)] });
+        return interaction.editReply(successPayload(`Granted ${amount} bonus free carry credit(s) to <@${user.id}>. Remaining bonus: ${result.remaining}.`));
       }
     }
 
@@ -569,16 +587,14 @@ module.exports = {
         const amount = interaction.options.getNumber("amount_or_runs", true);
         const result = await carryService.markPaid(carryId, interaction.user.id, amount);
         if (!result.ok) {
-          return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+          return interaction.editReply(errorPayload(result.reason));
         }
         const c = result.coverage;
-        return interaction.editReply({
-          embeds: [
-            new SuccessEmbed(
-              `Payment logged for carry #${carryId}.\nPaid total: \`${c.paidAmount}\`\nCovers runs: \`${c.coveredRuns}/${c.amount}\`\nRemaining payment: \`${c.remainingPayment}\`\nUnpaid runs left: \`${c.uncoveredRuns}\``
-            )
-          ]
-        });
+        return interaction.editReply(
+          successPayload(
+            `Payment logged for carry #${carryId}.\nPaid total: \`${c.paidAmount}\`\nCovers runs: \`${c.coveredRuns}/${c.amount}\`\nRemaining payment: \`${c.remainingPayment}\`\nUnpaid runs left: \`${c.uncoveredRuns}\``
+          )
+        );
       }
 
       if (sub === "log-runs") {
@@ -586,11 +602,13 @@ module.exports = {
         const runs = interaction.options.getInteger("runs", true);
         const result = await carryService.logRuns(carryId, interaction.user.id, runs);
         if (result?.needsActorConfirm || result?.needsCustomerConfirm) {
-          return interaction.editReply({ embeds: [new SuccessEmbed(result.reason)] });
+          return interaction.editReply(successPayload(result.reason));
         }
-        return interaction.editReply({
-          embeds: [result.ok ? new SuccessEmbed(`Runs logged for carry #${carryId}.${result.reached ? " Target reached and customer confirmation requested." : ""}`) : new ErrorEmbed(result.reason)]
-        });
+        return interaction.editReply(
+          result.ok
+            ? successPayload(`Runs logged for carry #${carryId}.${result.reached ? " Target reached and customer confirmation requested." : ""}`)
+            : errorPayload(result.reason)
+        );
       }
 
       if (sub === "delete-old") {
@@ -608,23 +626,19 @@ module.exports = {
         });
 
         if (!result.ok) {
-          return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
+          return interaction.editReply(errorPayload(result.reason));
         }
 
         if (result.dryRun) {
           const preview = result.ids.slice(0, 25).join(", ");
-          return interaction.editReply({
-            embeds: [new SuccessEmbed(`Dry run matched **${result.matched}** ticket(s).\nIDs: ${preview || "none"}${result.matched > 25 ? " ..." : ""}`)]
-          });
+          return interaction.editReply(successPayload(`Dry run matched **${result.matched}** ticket(s).\nIDs: ${preview || "none"}${result.matched > 25 ? " ..." : ""}`));
         }
 
         const details = result.errorDetails?.length ? `\nErrors: ${result.errorDetails.join(" | ")}` : "";
-        return interaction.editReply({
-          embeds: [new SuccessEmbed(`Delete-old complete. Matched: **${result.matched}**, deleted: **${result.deleted}**, failed: **${result.failed}**.${details}`)]
-        });
+        return interaction.editReply(successPayload(`Delete-old complete. Matched: **${result.matched}**, deleted: **${result.deleted}**, failed: **${result.failed}**.${details}`));
       }
     }
 
-    return interaction.editReply({ embeds: [new ErrorEmbed("Unknown carryadmin subcommand.")] });
+    return interaction.editReply(errorPayload("Unknown carryadmin subcommand."));
   }
 };

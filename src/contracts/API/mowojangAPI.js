@@ -20,6 +20,9 @@ async function getUUID(username) {
     }
 
     const { data } = await get(`https://mowojang.matdoes.dev/${username}`);
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid mowojang response.");
+    }
 
     if (data.errorMessage || data.id === undefined) {
       throw data.errorMessage ?? "Invalid username.";
@@ -32,8 +35,10 @@ async function getUUID(username) {
 
     return data.id;
   } catch (error) {
+    const message = String(error?.message || error || "");
+    if (message.includes("Unexpected end of JSON input")) throw "Mojang lookup temporarily failed. Try again.";
     // @ts-ignore
-    if (error.response.data === "Not found") throw "Invalid username.";
+    if (error.response?.data === "Not found") throw "Invalid username.";
     console.error(error);
     throw error;
   }
@@ -55,6 +60,9 @@ async function getUsername(uuid) {
     }
 
     const { data } = await get(`https://mowojang.matdoes.dev/${uuid}`);
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid mowojang response.");
+    }
     if (data.errorMessage || data.name === undefined) {
       throw data.errorMessage ?? "Invalid UUID.";
     }
@@ -68,6 +76,8 @@ async function getUsername(uuid) {
 
     return data.name;
   } catch (error) {
+    const message = String(error?.message || error || "");
+    if (message.includes("Unexpected end of JSON input")) throw "Mojang lookup temporarily failed. Try again.";
     console.error(error);
     // @ts-ignore
     if (error.response?.data === "Not found") throw "Invalid UUID.";
@@ -83,14 +93,19 @@ async function getUsername(uuid) {
 async function resolveUsernameOrUUID(username) {
   try {
     const { data } = await get(`https://mowojang.matdoes.dev/${username}`);
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid mowojang response.");
+    }
 
     return {
       username: data.name,
       uuid: data.id
     };
   } catch (error) {
+    const message = String(error?.message || error || "");
+    if (message.includes("Unexpected end of JSON input")) throw "Mojang lookup temporarily failed. Try again.";
     // @ts-ignore
-    if (error.response.data === "Not found") throw "Invalid Username Or UUID.";
+    if (error.response?.data === "Not found") throw "Invalid Username Or UUID.";
     console.error(error);
     throw error;
   }

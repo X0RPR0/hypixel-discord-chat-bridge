@@ -2,6 +2,7 @@ const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js")
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
+const { getAllLinks } = require("../../contracts/linkedStore.js");
 const { Embed } = require("../../contracts/embedHandler.js");
 const activityTracker = require("../other/activityTracker.js");
 const { readFileSync } = require("fs");
@@ -285,7 +286,7 @@ async function resolveGuildData(nowTs) {
     throw new HypixelDiscordChatBridgeError("Failed to fetch guild data.");
   }
 
-  const linkedMap = readJsonFile("data/linked.json", {});
+  const linkedMap = getAllLinks();
   const inactivityMap = readJsonFile("data/inactivity.json", {});
   return {
     nowTs,
