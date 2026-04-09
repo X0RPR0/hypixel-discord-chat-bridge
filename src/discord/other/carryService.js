@@ -1,4 +1,3 @@
-
 const {
   ActionRowBuilder,
   ButtonStyle,
@@ -27,11 +26,11 @@ const SERVICE_TEAM_FALLBACK_NAMES = ["service-team", "service team", "servicetea
 const SCORE_WEIGHTS = Object.freeze({
   dungeons: { f1: 1, f2: 2, f3: 3, f4: 5, f5: 7, f6: 10, f7: 15, m1: 18, m2: 22, m3: 26, m4: 32, m5: 40, m6: 55, m7: 75 },
   kuudra: { basic: 15, hot: 22, burning: 35, fiery: 50, infernal: 75 },
-  slayer_zombie: { "1": 1, "2": 2, "3": 3, "4": 5, "5": 7, t1: 1, t2: 2, t3: 3, t4: 5, t5: 7 },
-  slayer_tara: { "1": 1, "2": 2, "3": 4, "4": 6, "5": 10, t1: 1, t2: 2, t3: 4, t4: 6, t5: 10 },
-  slayer_sven: { "1": 1, "2": 2, "3": 4, "4": 6, t1: 1, t2: 2, t3: 4, t4: 6 },
-  slayer_eman: { "1": 2, "2": 4, "3": 7, "4": 12, t1: 2, t2: 4, t3: 7, t4: 12 },
-  slayer_blaze: { "1": 3, "2": 6, "3": 10, "4": 20, t1: 3, t2: 6, t3: 10, t4: 20 }
+  slayer_zombie: { 1: 1, 2: 2, 3: 3, 4: 5, 5: 7, t1: 1, t2: 2, t3: 3, t4: 5, t5: 7 },
+  slayer_tara: { 1: 1, 2: 2, 3: 4, 4: 6, 5: 10, t1: 1, t2: 2, t3: 4, t4: 6, t5: 10 },
+  slayer_sven: { 1: 1, 2: 2, 3: 4, 4: 6, t1: 1, t2: 2, t3: 4, t4: 6 },
+  slayer_eman: { 1: 2, 2: 4, 3: 7, 4: 12, t1: 2, t2: 4, t3: 7, t4: 12 },
+  slayer_blaze: { 1: 3, 2: 6, 3: 10, 4: 20, t1: 3, t2: 6, t3: 10, t4: 20 }
 });
 
 class CarryService {
@@ -96,9 +95,7 @@ class CarryService {
     for (const carry of openCarries) {
       stats.checked += 1;
       if (carry.ticket_id && !carry.ticket_forum_thread_id) {
-        const pseudoUser = carry.customer_discord_id
-          ? { id: String(carry.customer_discord_id), username: "customer", tag: "customer" }
-          : null;
+        const pseudoUser = carry.customer_discord_id ? { id: String(carry.customer_discord_id), username: "customer", tag: "customer" } : null;
         const before = this.getCarryById(carry.id);
         await this.ensureTicketThreadAndLog(
           Number(carry.ticket_id),
@@ -124,10 +121,7 @@ class CarryService {
         const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
         const created = await this.createExecutionChannel({ carry, carrierIds: assigned }).catch((error) => ({ ok: false, reason: error?.message || String(error) }));
         if (created?.ok && created.channel?.id) {
-          this.db
-            .getConnection()
-            .prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?")
-            .run(created.channel.id, carry.id);
+          this.db.getConnection().prepare("UPDATE carries SET execution_channel_id = ? WHERE id = ?").run(created.channel.id, carry.id);
           this.db.logEvent("carry.execution_channel_backfill", "carry", carry.id, { channelId: created.channel.id });
           stats.channelBackfilled += 1;
         } else {
@@ -200,9 +194,7 @@ class CarryService {
       ["kuudra", "infernal", "kuudra", 45000000]
     ];
 
-    const insert = db.prepare(
-      "INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING"
-    );
+    const insert = db.prepare("INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING");
     const updateIfUnset = db.prepare("UPDATE carry_catalog SET price = ? WHERE lower(carry_type)=lower(?) AND lower(tier)=lower(?) AND (price IS NULL OR price <= 0)");
 
     const tx = db.transaction(() => {
@@ -424,10 +416,7 @@ class CarryService {
   }
 
   async reopenCarryForTicket(ticketId, actorId = null) {
-    const carry = this.db
-      .getConnection()
-      .prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
-      .get(Number(ticketId));
+    const carry = this.db.getConnection().prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1").get(Number(ticketId));
 
     if (!carry) return { ok: true, message: "Ticket reopened (no carry linked)." };
     if (String(carry.status) === "completed") {
@@ -441,10 +430,7 @@ class CarryService {
       const exists = this.db.getConnection().prepare("SELECT id FROM queue_entries WHERE carry_id = ?").get(carry.id);
       const priority = this.computePriorityScore({ isPaid: Number(carry.is_paid) === 1, isFree: Number(carry.is_free) === 1, member: null });
       if (exists?.id) {
-        this.db
-          .getConnection()
-          .prepare("UPDATE queue_entries SET state = 'queued', priority_score = ?, stale_notified = 0 WHERE carry_id = ?")
-          .run(priority, carry.id);
+        this.db.getConnection().prepare("UPDATE queue_entries SET state = 'queued', priority_score = ?, stale_notified = 0 WHERE carry_id = ?").run(priority, carry.id);
       } else {
         this.db
           .getConnection()
@@ -557,28 +543,6 @@ class CarryService {
     return base * mult;
   }
 
-  parseCoinsInput(value) {
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : NaN;
-    }
-
-    const raw = String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "")
-      .replace(/,/g, ".");
-    if (!raw) return NaN;
-
-    const match = raw.match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);
-    if (!match) return NaN;
-
-    const base = Number(match[1]);
-    if (!Number.isFinite(base)) return NaN;
-    const suffix = match[2] || "";
-    const mult = suffix === "k" ? 1_000 : suffix === "m" ? 1_000_000 : suffix === "b" ? 1_000_000_000 : 1;
-    return base * mult;
-  }
-
   getFreeCarryBonus(userId) {
     if (!userId) return 0;
     const row = this.db.getConnection().prepare("SELECT remaining_count FROM freecarry_bonus WHERE user_id = ?").get(String(userId));
@@ -653,8 +617,12 @@ class CarryService {
   }
 
   isExcludedFromFreeCarry(carryType, tier) {
-    const type = String(carryType || "").toLowerCase().trim();
-    const normalizedTier = String(tier || "").toLowerCase().trim();
+    const type = String(carryType || "")
+      .toLowerCase()
+      .trim();
+    const normalizedTier = String(tier || "")
+      .toLowerCase()
+      .trim();
     if (type === "kuudra") return true;
     if (type === "dungeons" && normalizedTier === "m7") return true;
     return false;
@@ -711,7 +679,10 @@ class CarryService {
   }
 
   setRolePriority(roleId, value) {
-    this.db.getConnection().prepare("INSERT INTO role_priorities (role_id, value) VALUES (?, ?) ON CONFLICT(role_id) DO UPDATE SET value = excluded.value").run(roleId, Number(value));
+    this.db
+      .getConnection()
+      .prepare("INSERT INTO role_priorities (role_id, value) VALUES (?, ?) ON CONFLICT(role_id) DO UPDATE SET value = excluded.value")
+      .run(roleId, Number(value));
   }
 
   getRolePriorityScore(member) {
@@ -719,16 +690,16 @@ class CarryService {
     const roleIds = member.roles.cache.map((role) => role.id);
     if (roleIds.length === 0) return 0;
     const placeholders = roleIds.map(() => "?").join(",");
-    const rows = this.db.getConnection().prepare(`SELECT value FROM role_priorities WHERE role_id IN (${placeholders})`).all(...roleIds);
+    const rows = this.db
+      .getConnection()
+      .prepare(`SELECT value FROM role_priorities WHERE role_id IN (${placeholders})`)
+      .all(...roleIds);
     if (!rows.length) return 0;
     return Math.max(...rows.map((row) => Number(row.value || 0)));
   }
 
   getCatalogItem(type, tier) {
-    return this.db
-      .getConnection()
-      .prepare("SELECT * FROM carry_catalog WHERE lower(carry_type) = lower(?) AND lower(tier) = lower(?)")
-      .get(String(type), String(tier));
+    return this.db.getConnection().prepare("SELECT * FROM carry_catalog WHERE lower(carry_type) = lower(?) AND lower(tier) = lower(?)").get(String(type), String(tier));
   }
 
   isDisallowedCarryTier(type, tier) {
@@ -751,9 +722,7 @@ class CarryService {
       .map((v) => v.trim())
       .filter(Boolean);
     const db = this.db.getConnection();
-    const stmt = db.prepare(
-      "INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING"
-    );
+    const stmt = db.prepare("INSERT INTO carry_catalog (carry_type, tier, category, price, enabled) VALUES (?, ?, ?, 0, 1) ON CONFLICT(carry_type, tier) DO NOTHING");
     const normalizedName = String(name || "").toLowerCase();
     const tx = db.transaction(() => {
       for (const tier of tiers) {
@@ -792,10 +761,7 @@ class CarryService {
       return this.db.getConnection().prepare("UPDATE carry_catalog SET enabled = 0 WHERE lower(carry_type) = lower(?)").run(type).changes;
     }
 
-    return this.db
-      .getConnection()
-      .prepare("UPDATE carry_catalog SET enabled = 1 WHERE lower(carry_type) = lower(?) AND lower(tier) NOT IN ('5','t5')")
-      .run(type).changes;
+    return this.db.getConnection().prepare("UPDATE carry_catalog SET enabled = 1 WHERE lower(carry_type) = lower(?) AND lower(tier) NOT IN ('5','t5')").run(type).changes;
   }
 
   getQueueRows() {
@@ -918,10 +884,7 @@ class CarryService {
       sections: [
         {
           title: "Controls",
-          lines: [
-            "- Force actions are admin-only.",
-            "- Team members should use normal carry buttons in their claimed ticket channels."
-          ]
+          lines: ["- Force actions are admin-only.", "- Team members should use normal carry buttons in their claimed ticket channels."]
         },
         {
           title: "Target",
@@ -1004,7 +967,10 @@ class CarryService {
         .all();
       const paged = this.paginateRows(statsRows, page, 10);
       const lines = paged.items.length
-        ? paged.items.map((row, i) => `- ${i + 1 + (paged.page - 1) * 10}. <@${row.user_id}> | tickets: **${Number(row.completed_tickets_count || 0)}** | carries: **${Number(row.actual_carries_count || 0)}** | score: **${Math.round(Number(row.score_total || 0))}**`)
+        ? paged.items.map(
+            (row, i) =>
+              `- ${i + 1 + (paged.page - 1) * 10}. <@${row.user_id}> | tickets: **${Number(row.completed_tickets_count || 0)}** | carries: **${Number(row.actual_carries_count || 0)}** | score: **${Math.round(Number(row.score_total || 0))}**`
+          )
         : ["No carrier stats yet."];
       panelSections.push({ title: "Carrier Stats", lines });
     } else if (viewKey === "logs") {
@@ -1048,10 +1014,7 @@ class CarryService {
         if (options.length === 0) continue;
         panel.addActionRowComponents(
           new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId(`${CARRY_PREFIX}select:${category}`)
-              .setPlaceholder(`Select ${category} carry`)
-              .addOptions(options)
+            new StringSelectMenuBuilder().setCustomId(`${CARRY_PREFIX}select:${category}`).setPlaceholder(`Select ${category} carry`).addOptions(options)
           )
         );
       }
@@ -1118,7 +1081,10 @@ class CarryService {
         { title: "Queue", lines: queueLines },
         {
           title: "Live Metrics",
-          lines: [`Queue Size: **${rows.length}**`, `Active Carries: **${rows.filter((r) => ["queued", "claimed", "in_progress", "pending_confirm"].includes(String(r.status))).length}**`]
+          lines: [
+            `Queue Size: **${rows.length}**`,
+            `Active Carries: **${rows.filter((r) => ["queued", "claimed", "in_progress", "pending_confirm"].includes(String(r.status))).length}**`
+          ]
         }
       ],
       actions: [
@@ -1263,8 +1229,12 @@ class CarryService {
       return { ok: false, reason: "Carry queue is currently disabled." };
     }
 
-    const normalizedType = String(carryType || "").toLowerCase().trim();
-    const normalizedTier = String(tier || "").toLowerCase().trim();
+    const normalizedType = String(carryType || "")
+      .toLowerCase()
+      .trim();
+    const normalizedTier = String(tier || "")
+      .toLowerCase()
+      .trim();
     const qty = Number(amount);
 
     if (!normalizedType || !normalizedTier || !Number.isInteger(qty) || qty <= 0) {
@@ -1301,13 +1271,20 @@ class CarryService {
     const tx = this.db.getConnection().transaction(() => {
       let ticketId = null;
       if (this.ticketService && customerUser?.id) {
-      const temp = this.db
+        const temp = this.db
           .getConnection()
           .prepare(
             `INSERT INTO tickets (guild_id, type, title, status, customer_discord_id, customer_username, created_at, assigned_customer_discord_id)
              VALUES (?, 'manual_carry', ?, 'open', ?, ?, ?, ?)`
           )
-          .run(String(guildId || ""), `Carry Request - ${normalizedType} ${normalizedTier}`, customerUser.id, customerUser.tag || customerUser.username, now, customerUser.id);
+          .run(
+            String(guildId || ""),
+            `Carry Request - ${normalizedType} ${normalizedTier}`,
+            customerUser.id,
+            customerUser.tag || customerUser.username,
+            now,
+            customerUser.id
+          );
         ticketId = Number(temp.lastInsertRowid);
       }
 
@@ -1350,10 +1327,7 @@ class CarryService {
         member
       });
 
-      this.db
-        .getConnection()
-        .prepare("INSERT INTO queue_entries (carry_id, state, priority_score, created_at) VALUES (?, 'queued', ?, ?)")
-        .run(carryId, priority, now);
+      this.db.getConnection().prepare("INSERT INTO queue_entries (carry_id, state, priority_score, created_at) VALUES (?, 'queued', ?, ?)").run(carryId, priority, now);
 
       let freeSource = null;
       if (freeEligible && customerUser?.id) {
@@ -1536,15 +1510,15 @@ class CarryService {
   touchCarryActivity(carryId, ts = Date.now()) {
     const id = Number(carryId);
     if (!Number.isInteger(id) || id <= 0) return;
-    this.db.getConnection().prepare("UPDATE carries SET last_activity_at = ? WHERE id = ?").run(Number(ts || Date.now()), id);
+    this.db
+      .getConnection()
+      .prepare("UPDATE carries SET last_activity_at = ? WHERE id = ?")
+      .run(Number(ts || Date.now()), id);
   }
 
   touchCarryActivityByChannel(channelId, ts = Date.now()) {
     if (!channelId) return;
-    const carry = this.db
-      .getConnection()
-      .prepare("SELECT id FROM carries WHERE execution_channel_id = ? ORDER BY id DESC LIMIT 1")
-      .get(String(channelId));
+    const carry = this.db.getConnection().prepare("SELECT id FROM carries WHERE execution_channel_id = ? ORDER BY id DESC LIMIT 1").get(String(channelId));
     if (!carry?.id) return;
     this.touchCarryActivity(carry.id, ts);
   }
@@ -1725,10 +1699,7 @@ class CarryService {
     }
 
     this.db.getConnection().prepare("UPDATE carries SET status = 'queued', assigned_carrier_discord_ids = '[]' WHERE id = ?").run(carry.id);
-    this.db
-      .getConnection()
-      .prepare("UPDATE queue_entries SET state = 'queued', claimed_by_discord_id = NULL, stale_notified = 0 WHERE carry_id = ?")
-      .run(carry.id);
+    this.db.getConnection().prepare("UPDATE queue_entries SET state = 'queued', claimed_by_discord_id = NULL, stale_notified = 0 WHERE carry_id = ?").run(carry.id);
     this.touchCarryActivity(carry.id);
     this.db.logEvent("carry.force_unclaimed", "carry", carry.id, { actorId });
     await this.syncCarryTicketIndicators(carry.id);
@@ -1888,7 +1859,12 @@ class CarryService {
     const breakdown = this.safePriceBreakdown(carry?.price_breakdown_json);
     const coverage = this.getPaymentCoverage(carry);
     const assigned = JSON.parse(carry.assigned_carrier_discord_ids || "[]");
-    const carrierLabel = assigned.length ? assigned.map((id) => `<@${id}>`).join(", ").slice(0, 1024) : "Unassigned";
+    const carrierLabel = assigned.length
+      ? assigned
+          .map((id) => `<@${id}>`)
+          .join(", ")
+          .slice(0, 1024)
+      : "Unassigned";
     const scopePct = Number(breakdown?.scopeDiscount?.percentage || 0);
     const bulkPct = Number(breakdown?.bulkDiscount?.percentage || 0);
     const freeReduction = Number(breakdown?.freeReduction || 0);
@@ -1898,7 +1874,15 @@ class CarryService {
 
     const status = String(carry.status || "queued").toLowerCase();
     const statusIcon =
-      status === "completed" ? "⚫ Completed" : status === "pending_confirm" ? "🟡 Pending Confirm" : status === "cancelled" ? "🔴 Cancelled" : status === "queued" ? "🟡 Waiting for Carrier" : "🟢 In Progress";
+      status === "completed"
+        ? "⚫ Completed"
+        : status === "pending_confirm"
+          ? "🟡 Pending Confirm"
+          : status === "cancelled"
+            ? "🔴 Cancelled"
+            : status === "queued"
+              ? "🟡 Waiting for Carrier"
+              : "🟢 In Progress";
 
     const actions = this.buildExecutionComponents(carry);
     const panel = makePanel({
@@ -1907,7 +1891,12 @@ class CarryService {
       sections: [
         {
           title: "Customer Info",
-          lines: [`- Customer: ${carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown"}`, `- Order Type: **${carry.carry_type} ${carry.tier}**`, `- Amount: **${carry.amount}**`, `- Carrier(s): ${carrierLabel}`]
+          lines: [
+            `- Customer: ${carry.customer_discord_id ? `<@${carry.customer_discord_id}>` : "Unknown"}`,
+            `- Order Type: **${carry.carry_type} ${carry.tier}**`,
+            `- Amount: **${carry.amount}**`,
+            `- Carrier(s): ${carrierLabel}`
+          ]
         },
         {
           title: "Payment",
@@ -2048,7 +2037,10 @@ class CarryService {
         actionButton(`${CARRY_PREFIX}reping:${carry.id}`, "Re-Ping Carriers", ButtonStyle.Secondary)
       );
     } else if (["completed", "cancelled"].includes(status)) {
-      actions.push(actionButton(`${CARRY_PREFIX}view:logs:${carry.id}`, "View Logs", ButtonStyle.Secondary), actionButton(`${CARRY_PREFIX}reopen:${carry.id}`, "Reopen", ButtonStyle.Primary));
+      actions.push(
+        actionButton(`${CARRY_PREFIX}view:logs:${carry.id}`, "View Logs", ButtonStyle.Secondary),
+        actionButton(`${CARRY_PREFIX}reopen:${carry.id}`, "Reopen", ButtonStyle.Primary)
+      );
     }
 
     return panelPayload(
@@ -2100,7 +2092,7 @@ class CarryService {
 
     const quickPayload = this.buildExecutionQuickPanelPayload(carry);
     const quickId = this.getQuickPanelMessageId(carry.id);
-    let quickMessage = quickId ? await channel.messages.fetch(quickId).catch(() => null) : null;
+    const quickMessage = quickId ? await channel.messages.fetch(quickId).catch(() => null) : null;
     if (!quickMessage) {
       const posted = await channel.send(quickPayload).catch(() => null);
       if (posted?.id) {
@@ -2595,10 +2587,7 @@ class CarryService {
             sections: [
               {
                 title: "Feedback",
-                lines: [
-                  carry.customer_discord_id ? `- Customer: <@${carry.customer_discord_id}>` : "- Customer: Unknown",
-                  "Please rate your carry experience (1-5)."
-                ]
+                lines: [carry.customer_discord_id ? `- Customer: <@${carry.customer_discord_id}>` : "- Customer: Unknown", "Please rate your carry experience (1-5)."]
               }
             ],
             actions: [
@@ -2814,7 +2803,9 @@ class CarryService {
       if (parsed.action === "admin_force_unclaim") {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         const result = await this.forceUnclaimCarry(target.id, interaction.user.id);
-        await interaction.editReply(infoPayload({ title: "Force Unclaim", lines: [result.ok ? `Carry #${target.id} moved back to queue.` : result.reason], ephemeral: true }));
+        await interaction.editReply(
+          infoPayload({ title: "Force Unclaim", lines: [result.ok ? `Carry #${target.id} moved back to queue.` : result.reason], ephemeral: true })
+        );
         return true;
       }
 
@@ -2950,12 +2941,7 @@ class CarryService {
         const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}bulk:${bulkAction}`).setTitle("Confirm Bulk Action");
         modal.addComponents(
           new ActionRowBuilder().addComponents(
-            new TextInputBuilder()
-              .setCustomId("confirm")
-              .setLabel("Type CONFIRM to continue")
-              .setStyle(TextInputStyle.Short)
-              .setRequired(true)
-              .setPlaceholder("CONFIRM")
+            new TextInputBuilder().setCustomId("confirm").setLabel("Type CONFIRM to continue").setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder("CONFIRM")
           )
         );
         await interaction.showModal(modal);
@@ -3181,7 +3167,9 @@ class CarryService {
         return true;
       }
 
-      const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}${parsed.action}:${parsed.carryId}`).setTitle(parsed.action === "mark_paid" ? "Log Payment" : "Log Runs");
+      const modal = new ModalBuilder()
+        .setCustomId(`${CARRY_MODAL_PREFIX}${parsed.action}:${parsed.carryId}`)
+        .setTitle(parsed.action === "mark_paid" ? "Log Payment" : "Log Runs");
       modal.addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
@@ -3293,7 +3281,9 @@ class CarryService {
       }
 
       const modal = new ModalBuilder().setCustomId(`${CARRY_MODAL_PREFIX}${parsed.action}`).setTitle(`${parsed.action} Carry`);
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("carry_id").setLabel("Carry ID").setStyle(TextInputStyle.Short).setRequired(true)));
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("carry_id").setLabel("Carry ID").setStyle(TextInputStyle.Short).setRequired(true))
+      );
       await interaction.showModal(modal);
       return true;
     }
@@ -3311,7 +3301,9 @@ class CarryService {
         return true;
       }
 
-      const confirm = String(interaction.fields.getTextInputValue("confirm") || "").trim().toUpperCase();
+      const confirm = String(interaction.fields.getTextInputValue("confirm") || "")
+        .trim()
+        .toUpperCase();
       if (confirm !== "CONFIRM") {
         await interaction.reply(infoPayload({ title: "Bulk Action Canceled", lines: ["Confirmation phrase did not match."], ephemeral: true }));
         return true;
@@ -3350,10 +3342,7 @@ class CarryService {
       }
 
       if (bulkAction === "close_completed") {
-        const rows = this.db
-          .getConnection()
-          .prepare("SELECT id, execution_channel_id FROM carries WHERE status = 'completed' ORDER BY id DESC LIMIT 100")
-          .all();
+        const rows = this.db.getConnection().prepare("SELECT id, execution_channel_id FROM carries WHERE status = 'completed' ORDER BY id DESC LIMIT 100").all();
         let closed = 0;
         let failed = 0;
         const errorDetails = [];
@@ -3379,7 +3368,12 @@ class CarryService {
         await interaction.editReply(
           infoPayload({
             title: "Bulk Close",
-            lines: [`Scanned ${rows.length} completed carries.`, `Closed lingering channels: ${closed}`, `Failed: ${failed}`, ...(errorDetails.length ? [`Details: ${errorDetails.join(" | ")}`] : [])],
+            lines: [
+              `Scanned ${rows.length} completed carries.`,
+              `Closed lingering channels: ${closed}`,
+              `Failed: ${failed}`,
+              ...(errorDetails.length ? [`Details: ${errorDetails.join(" | ")}`] : [])
+            ],
             ephemeral: true
           })
         );
@@ -3554,7 +3548,11 @@ class CarryService {
     if (action === "mark_paid") result = await this.markPaid(carryId, interaction.user.id, 0);
     if (action === "log_runs") result = await this.logRuns(carryId, interaction.user.id, 1);
 
-    const message = result?.ok ? (action === "start" && result.channelId ? `Carry #${carryId} started in <#${result.channelId}>.` : `Action \`${action}\` applied on carry #${carryId}.`) : result?.reason || "Action failed.";
+    const message = result?.ok
+      ? action === "start" && result.channelId
+        ? `Carry #${carryId} started in <#${result.channelId}>.`
+        : `Action \`${action}\` applied on carry #${carryId}.`
+      : result?.reason || "Action failed.";
 
     await interaction.reply({ content: message, ephemeral: true });
     return true;
@@ -3598,16 +3596,24 @@ class CarryService {
         `INSERT INTO discount_rules (kind, scope, category, carry_type, tier, min_amount, percentage, starts_at, ends_at, active, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
       )
-      .run(rule.kind, rule.scope, rule.category || null, rule.carryType || null, rule.tier || null, rule.minAmount ?? null, Number(rule.percentage), rule.startsAt ?? null, rule.endsAt ?? null, now);
+      .run(
+        rule.kind,
+        rule.scope,
+        rule.category || null,
+        rule.carryType || null,
+        rule.tier || null,
+        rule.minAmount ?? null,
+        Number(rule.percentage),
+        rule.startsAt ?? null,
+        rule.endsAt ?? null,
+        now
+      );
 
     return Number(result.lastInsertRowid);
   }
 
   removeStaticDiscountByAmount(amount) {
-    return this.db
-      .getConnection()
-      .prepare("DELETE FROM discount_rules WHERE kind = 'static' AND scope = 'global' AND min_amount = ?")
-      .run(Number(amount)).changes;
+    return this.db.getConnection().prepare("DELETE FROM discount_rules WHERE kind = 'static' AND scope = 'global' AND min_amount = ?").run(Number(amount)).changes;
   }
 
   formatPricePreview(type, tier, amount) {

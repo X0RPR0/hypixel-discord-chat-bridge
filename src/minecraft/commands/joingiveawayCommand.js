@@ -11,8 +11,8 @@ class JoinGiveawayCommand extends minecraftCommand {
     this.description = "Join a giveaway by ID.";
     this.options = [
       {
-        name: "\"id\"",
-        description: "Example: !joingiveaway \"1\"",
+        name: '"id"',
+        description: 'Example: !joingiveaway "1"',
         required: true
       }
     ];

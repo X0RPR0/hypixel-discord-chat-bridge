@@ -1129,9 +1129,7 @@ class StateHandler extends eventHandler {
 
   extractKickDetails(message) {
     const normalized = replaceAllRanks(String(message || "").trim());
-    const match = normalized.match(
-      /^(?<username>[A-Za-z0-9_]{3,16}) was kicked from the guild by (?<kickedBy>[A-Za-z0-9_]{3,16})(?: for (?<reason>.+?))?!?$/i
-    );
+    const match = normalized.match(/^(?<username>[A-Za-z0-9_]{3,16}) was kicked from the guild by (?<kickedBy>[A-Za-z0-9_]{3,16})(?: for (?<reason>.+?))?!?$/i);
 
     if (!match?.groups) {
       return null;
@@ -1212,8 +1210,7 @@ class StateHandler extends eventHandler {
         return null;
       }
 
-      const oldUsername =
-        existing.lastKnownUsername && existing.lastKnownUsername.toLowerCase() !== username.toLowerCase() ? existing.lastKnownUsername : null;
+      const oldUsername = existing.lastKnownUsername && existing.lastKnownUsername.toLowerCase() !== username.toLowerCase() ? existing.lastKnownUsername : null;
 
       return {
         uuid: normalizedUuid,
@@ -1234,11 +1231,8 @@ class StateHandler extends eventHandler {
       const departure = rejoinContext.departure;
       const action = departure.type === "kicked" ? "got kicked" : "left";
       const oldUsernameText = rejoinContext.oldUsername ? ` (Old username: "${rejoinContext.oldUsername}")` : "";
-      const kickSuffix =
-        departure.type === "kicked" ? ` for: "${departure.reason || "Unknown"}" by "${departure.kickedBy || "Unknown"}"` : "";
-      const message = `User "${username}" was part of the guild before${oldUsernameText}. They ${action} on "${this.formatHistoryDate(
-        departure.date
-      )}"${kickSuffix}`;
+      const kickSuffix = departure.type === "kicked" ? ` for: "${departure.reason || "Unknown"}" by "${departure.kickedBy || "Unknown"}"` : "";
+      const message = `User "${username}" was part of the guild before${oldUsernameText}. They ${action} on "${this.formatHistoryDate(departure.date)}"${kickSuffix}`;
 
       await this.sendGuildCommandWithRateLimitRetry(`/oc ${message}`, {
         delayMs: 1800,

@@ -96,7 +96,10 @@ class NetWorthCommand extends minecraftCommand {
         } else {
           profileData = allProfiles.find((entry) => String(entry?.cute_name || "").toLowerCase() === requestedProfile);
           if (!profileData) {
-            const availableProfiles = allProfiles.map((entry) => entry?.cute_name).filter(Boolean).join(", ");
+            const availableProfiles = allProfiles
+              .map((entry) => entry?.cute_name)
+              .filter(Boolean)
+              .join(", ");
             throw `Profile \`${requestedProfile}\` not found. Available: ${availableProfiles || "none"}`;
           }
         }

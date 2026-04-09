@@ -14,4 +14,3 @@ module.exports = {
     await setupService.show(interaction);
   }
 };
-

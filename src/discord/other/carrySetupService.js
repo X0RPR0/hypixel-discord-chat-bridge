@@ -1,4 +1,13 @@
-﻿const { ActionRowBuilder, ChannelSelectMenuBuilder, ChannelType, ModalBuilder, PermissionsBitField, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+﻿const {
+  ActionRowBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
+  ModalBuilder,
+  PermissionsBitField,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} = require("discord.js");
 const ms = require("ms");
 const { actionButton, infoPayload, makePanel, panelPayload } = require("./componentsV2Panels.js");
 
@@ -37,13 +46,12 @@ class CarrySetupService {
   }
 
   getState(messageId, actorId) {
-    const raw =
-      this.db.getUiPanelState({
-        panelScope: SETUP_SCOPE,
-        messageId: String(messageId || "0"),
-        actorId: String(actorId || "0"),
-        fallback: { viewKey: "overview", page: 1, expanded: [] }
-      }) || { viewKey: "overview", page: 1, expanded: [] };
+    const raw = this.db.getUiPanelState({
+      panelScope: SETUP_SCOPE,
+      messageId: String(messageId || "0"),
+      actorId: String(actorId || "0"),
+      fallback: { viewKey: "overview", page: 1, expanded: [] }
+    }) || { viewKey: "overview", page: 1, expanded: [] };
     return { viewKey: VIEWS.includes(String(raw.viewKey || "")) ? String(raw.viewKey) : "overview", meta: this.parseExpanded(raw.expanded) };
   }
 
@@ -188,10 +196,18 @@ class CarrySetupService {
           new StringSelectMenuBuilder()
             .setCustomId(`${SETUP_PREFIX}setting_select`)
             .setPlaceholder("1) Choose setting")
-            .addOptions(this.withFallbackOptions(this.settingOptions().map((o) => ({ label: o.label, value: o.value, default: o.value === meta.setting })), "No settings"))
+            .addOptions(
+              this.withFallbackOptions(
+                this.settingOptions().map((o) => ({ label: o.label, value: o.value, default: o.value === meta.setting })),
+                "No settings"
+              )
+            )
         ),
         new ActionRowBuilder().addComponents(
-          new ChannelSelectMenuBuilder().setCustomId(`${SETUP_PREFIX}channel_pick`).setPlaceholder("2) Pick channel").setChannelTypes(this.channelTypesForSetting(meta.setting))
+          new ChannelSelectMenuBuilder()
+            .setCustomId(`${SETUP_PREFIX}channel_pick`)
+            .setPlaceholder("2) Pick channel")
+            .setChannelTypes(this.channelTypesForSetting(meta.setting))
         )
       );
       actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2));
@@ -225,7 +241,12 @@ class CarrySetupService {
           new StringSelectMenuBuilder()
             .setCustomId(`${SETUP_PREFIX}price_category`)
             .setPlaceholder("Choose category")
-            .addOptions(this.withFallbackOptions(categories.slice(0, 25).map((c) => ({ label: c, value: c, default: c === meta.category })), "No categories"))
+            .addOptions(
+              this.withFallbackOptions(
+                categories.slice(0, 25).map((c) => ({ label: c, value: c, default: c === meta.category })),
+                "No categories"
+              )
+            )
         )
       );
       if (typeOptions.length > 1) {
@@ -249,21 +270,34 @@ class CarrySetupService {
         for (const group of this.chunk(list, 5)) {
           extraRows.push(
             new ActionRowBuilder().addComponents(
-              ...group.map((r) =>
-                actionButton(`${SETUP_PREFIX}quick_price:${r.type}:${r.tier}`, r.tier.toLowerCase(), r.tier === meta.tier ? 1 : 2)
-              )
+              ...group.map((r) => actionButton(`${SETUP_PREFIX}quick_price:${r.type}:${r.tier}`, r.tier.toLowerCase(), r.tier === meta.tier ? 1 : 2))
             )
           );
         }
       };
       const isTier = (row, re) => re.test(String(row.tier || "").toLowerCase());
       if (String(meta.category).toLowerCase() === "dungeons") {
-        groupRows("F1 - F5", tierRows.filter((r) => isTier(r, /^f[1-5]$/i)));
-        groupRows("F6 - F7", tierRows.filter((r) => isTier(r, /^f[67]$/i)));
-        groupRows("M1 - M5", tierRows.filter((r) => isTier(r, /^m[1-5]$/i)));
-        groupRows("M6 - M7", tierRows.filter((r) => isTier(r, /^m[67]$/i)));
+        groupRows(
+          "F1 - F5",
+          tierRows.filter((r) => isTier(r, /^f[1-5]$/i))
+        );
+        groupRows(
+          "F6 - F7",
+          tierRows.filter((r) => isTier(r, /^f[67]$/i))
+        );
+        groupRows(
+          "M1 - M5",
+          tierRows.filter((r) => isTier(r, /^m[1-5]$/i))
+        );
+        groupRows(
+          "M6 - M7",
+          tierRows.filter((r) => isTier(r, /^m[67]$/i))
+        );
         const used = new Set(["f1", "f2", "f3", "f4", "f5", "f6", "f7", "m1", "m2", "m3", "m4", "m5", "m6", "m7"]);
-        groupRows("Other Tiers", tierRows.filter((r) => !used.has(String(r.tier).toLowerCase())));
+        groupRows(
+          "Other Tiers",
+          tierRows.filter((r) => !used.has(String(r.tier).toLowerCase()))
+        );
       } else {
         groupRows("Tiers", tierRows);
       }
@@ -297,14 +331,20 @@ class CarrySetupService {
     }
 
     if (viewKey === "discounts") {
-      const activeRules = this.db.getConnection().prepare("SELECT id, kind, scope, category, carry_type, tier, min_amount, percentage, ends_at FROM discount_rules WHERE active = 1 ORDER BY id DESC LIMIT 8").all();
+      const activeRules = this.db
+        .getConnection()
+        .prepare("SELECT id, kind, scope, category, carry_type, tier, min_amount, percentage, ends_at FROM discount_rules WHERE active = 1 ORDER BY id DESC LIMIT 8")
+        .all();
       const stacking = Boolean(this.db.getBinding("discount_stacking_enabled", false));
       sections.push({
         title: "Discount Rules",
         lines: [
           `- Stacking: **${stacking ? "Enabled" : "Disabled"}**`,
           ...(activeRules.length
-            ? activeRules.map((r) => `- #${r.id} ${r.kind}/${r.scope} ${r.carry_type || r.category || "global"} ${r.tier || ""} ${r.min_amount ? `min ${r.min_amount}` : ""} ${Number(r.percentage || 0)}%${r.ends_at ? ` (ends <t:${Math.floor(Number(r.ends_at) / 1000)}:R>)` : ""}`)
+            ? activeRules.map(
+                (r) =>
+                  `- #${r.id} ${r.kind}/${r.scope} ${r.carry_type || r.category || "global"} ${r.tier || ""} ${r.min_amount ? `min ${r.min_amount}` : ""} ${Number(r.percentage || 0)}%${r.ends_at ? ` (ends <t:${Math.floor(Number(r.ends_at) / 1000)}:R>)` : ""}`
+              )
             : ["- No active rules"])
         ]
       });
@@ -318,7 +358,18 @@ class CarrySetupService {
 
     if (viewKey === "overview") actions.push(actionButton(`${SETUP_PREFIX}publish_dashboards`, "Republish Dashboards", 2));
 
-    return panelPayload(makePanel({ title: "Carry / Ticket Setup Dashboard", status: `View: ${viewKey}`, sections, topRows, actions, extraRows, accentColor: 0x5865f2, footer: "Interactive setup panel - Components V2" }));
+    return panelPayload(
+      makePanel({
+        title: "Carry / Ticket Setup Dashboard",
+        status: `View: ${viewKey}`,
+        sections,
+        topRows,
+        actions,
+        extraRows,
+        accentColor: 0x5865f2,
+        footer: "Interactive setup panel - Components V2"
+      })
+    );
   }
 
   async show(interaction) {
@@ -338,25 +389,29 @@ class CarrySetupService {
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) return { ok: false, reason: "Channel not found." };
     if (settingKey === "carry_dashboard") {
-      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return { ok: false, reason: "Carry dashboard requires text/announcement channel." };
+      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type))
+        return { ok: false, reason: "Carry dashboard requires text/announcement channel." };
       this.carryService.setCarryDashboardChannelId(channel.id);
       await this.carryService.publishCarryDashboard(channel.id).catch(() => {});
       return { ok: true };
     }
     if (settingKey === "carrier_dashboard") {
-      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return { ok: false, reason: "Carrier dashboard requires text/announcement channel." };
+      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type))
+        return { ok: false, reason: "Carrier dashboard requires text/announcement channel." };
       this.carryService.setCarrierDashboardChannelId(channel.id);
       await this.carryService.publishCarrierDashboard(channel.id).catch(() => {});
       return { ok: true };
     }
     if (settingKey === "carrier_stats") {
-      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return { ok: false, reason: "Carrier stats requires text/announcement channel." };
+      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type))
+        return { ok: false, reason: "Carrier stats requires text/announcement channel." };
       this.carryService.setCarrierStatsChannelId(channel.id);
       await this.carryService.publishCarrierStatsDashboard(channel.id).catch(() => {});
       return { ok: true };
     }
     if (settingKey === "ticket_dashboard") {
-      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) return { ok: false, reason: "Ticket dashboard requires text/announcement channel." };
+      if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type))
+        return { ok: false, reason: "Ticket dashboard requires text/announcement channel." };
       this.ticketService.setTicketDashboardChannelId(channel.id);
       await this.ticketService.publishDashboard(channel.id).catch(() => {});
       return { ok: true };
@@ -386,111 +441,145 @@ class CarrySetupService {
       const state = this.getState(messageId, actorId);
       const payload = String(interaction.customId).slice(SETUP_PREFIX.length);
 
-    if (payload === "view_select" || payload.startsWith("view:")) {
-      const viewKey = payload === "view_select" ? String(interaction.values?.[0] || "overview") : String(payload.split(":")[1] || "overview");
-      state.viewKey = VIEWS.includes(viewKey) ? viewKey : "overview";
-      this.setState(messageId, actorId, state);
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "refresh") {
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "setting_select") {
-      const next = String(interaction.values?.[0] || state.meta.setting);
-      if (next !== "__none__") state.meta.setting = next;
-      this.setState(messageId, actorId, state);
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "channel_pick") {
-      const channelId = String(interaction.values?.[0] || "");
-      const result = await this.applySettingChannel(interaction.guild, state.meta.setting, channelId);
-      if (!result.ok) {
-        await interaction.reply(infoPayload({ title: "Setup Update Failed", lines: [result.reason], ephemeral: true }));
+      if (payload === "view_select" || payload.startsWith("view:")) {
+        const viewKey = payload === "view_select" ? String(interaction.values?.[0] || "overview") : String(payload.split(":")[1] || "overview");
+        state.viewKey = VIEWS.includes(viewKey) ? viewKey : "overview";
+        this.setState(messageId, actorId, state);
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
         return true;
       }
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "price_category" || payload === "price_type" || payload === "price_tier") {
-      const value = String(interaction.values?.[0] || "");
-      if (payload === "price_category" && value !== "__none__") {
-        state.meta.category = value;
-        const row = this.db.getConnection().prepare("SELECT carry_type, tier FROM carry_catalog WHERE category = ? AND lower(tier) NOT IN ('5','t5') ORDER BY carry_type, tier LIMIT 1").get(value);
-        if (row) {
-          state.meta.type = String(row.carry_type);
-          state.meta.tier = String(row.tier);
-        }
+      if (payload === "refresh") {
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
       }
-      if (payload === "price_type" && value !== "__none__") state.meta.type = value;
-      if (payload === "price_tier" && value !== "__none__") state.meta.tier = value;
-      this.setState(messageId, actorId, state);
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "price_set") {
-      const modal = new ModalBuilder().setCustomId(`${SETUP_MODAL_PREFIX}price:${messageId}`).setTitle("Set Carry Price");
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("price").setLabel(`Price for ${state.meta.type} ${state.meta.tier}`).setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder("e.g. 400k, 1.5m")));
-      await interaction.showModal(modal);
-      return true;
-    }
-    if (payload.startsWith("quick_price:")) {
-      const [, type, tier] = payload.split(":");
-      const modal = new ModalBuilder().setCustomId(`${SETUP_MODAL_PREFIX}pricequick:${messageId}:${type}:${tier}`).setTitle(`Set Price: ${type} ${tier}`);
-      modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("price").setLabel("Price (e.g. 400k, 1.5m)").setStyle(TextInputStyle.Short).setRequired(true)));
-      await interaction.showModal(modal);
-      return true;
-    }
-    if (payload === "price_enable_type" || payload === "price_disable_type") {
-      const changes = this.carryService.setCarryEnabled(state.meta.type, payload === "price_enable_type");
-      await this.carryService.publishCarryDashboard().catch(() => {});
-      await interaction.reply(infoPayload({ title: "Catalog Updated", lines: [`Changed ${changes} rows for ${state.meta.type}.`], ephemeral: true }));
-      return true;
-    }
-    if (payload === "publish_dashboards") {
-      await this.carryService.publishCarryDashboard().catch(() => {});
-      await this.carryService.publishCarrierDashboard().catch(() => {});
-      await this.carryService.publishCarrierStatsDashboard().catch(() => {});
-      await this.ticketService.publishDashboard().catch(() => {});
-      await interaction.reply(infoPayload({ title: "Dashboards", lines: ["Republished carry/ticket dashboards."], ephemeral: true }));
-      return true;
-    }
-    if (payload === "toggle_transcript") {
-      this.carryService.setCarryTranscriptEnabled(!this.carryService.isCarryTranscriptEnabled());
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "queue_enable" || payload === "queue_disable" || payload === "queue_toggle") {
-      const next = payload === "queue_enable" ? true : payload === "queue_disable" ? false : !this.carryService.isQueueEnabled();
-      this.carryService.setQueueEnabled(next);
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
-    if (payload === "queue_reset") {
-      this.carryService.resetQueue();
-      await this.carryService.publishCarrierDashboard().catch(() => {});
-      await interaction.reply(infoPayload({ title: "Queue", lines: ["Queue reset complete."], ephemeral: true }));
-      return true;
-    }
-    if (payload === "discount_toggle_stacking") {
-      this.db.setBinding("discount_stacking_enabled", !Boolean(this.db.getBinding("discount_stacking_enabled", false)));
-      await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
-      return true;
-    }
+      if (payload === "setting_select") {
+        const next = String(interaction.values?.[0] || state.meta.setting);
+        if (next !== "__none__") state.meta.setting = next;
+        this.setState(messageId, actorId, state);
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
+      if (payload === "channel_pick") {
+        const channelId = String(interaction.values?.[0] || "");
+        const result = await this.applySettingChannel(interaction.guild, state.meta.setting, channelId);
+        if (!result.ok) {
+          await interaction.reply(infoPayload({ title: "Setup Update Failed", lines: [result.reason], ephemeral: true }));
+          return true;
+        }
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
+      if (payload === "price_category" || payload === "price_type" || payload === "price_tier") {
+        const value = String(interaction.values?.[0] || "");
+        if (payload === "price_category" && value !== "__none__") {
+          state.meta.category = value;
+          const row = this.db
+            .getConnection()
+            .prepare("SELECT carry_type, tier FROM carry_catalog WHERE category = ? AND lower(tier) NOT IN ('5','t5') ORDER BY carry_type, tier LIMIT 1")
+            .get(value);
+          if (row) {
+            state.meta.type = String(row.carry_type);
+            state.meta.tier = String(row.tier);
+          }
+        }
+        if (payload === "price_type" && value !== "__none__") state.meta.type = value;
+        if (payload === "price_tier" && value !== "__none__") state.meta.tier = value;
+        this.setState(messageId, actorId, state);
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
+      if (payload === "price_set") {
+        const modal = new ModalBuilder().setCustomId(`${SETUP_MODAL_PREFIX}price:${messageId}`).setTitle("Set Carry Price");
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("price")
+              .setLabel(`Price for ${state.meta.type} ${state.meta.tier}`)
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder("e.g. 400k, 1.5m")
+          )
+        );
+        await interaction.showModal(modal);
+        return true;
+      }
+      if (payload.startsWith("quick_price:")) {
+        const [, type, tier] = payload.split(":");
+        const modal = new ModalBuilder().setCustomId(`${SETUP_MODAL_PREFIX}pricequick:${messageId}:${type}:${tier}`).setTitle(`Set Price: ${type} ${tier}`);
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId("price").setLabel("Price (e.g. 400k, 1.5m)").setStyle(TextInputStyle.Short).setRequired(true)
+          )
+        );
+        await interaction.showModal(modal);
+        return true;
+      }
+      if (payload === "price_enable_type" || payload === "price_disable_type") {
+        const changes = this.carryService.setCarryEnabled(state.meta.type, payload === "price_enable_type");
+        await this.carryService.publishCarryDashboard().catch(() => {});
+        await interaction.reply(infoPayload({ title: "Catalog Updated", lines: [`Changed ${changes} rows for ${state.meta.type}.`], ephemeral: true }));
+        return true;
+      }
+      if (payload === "publish_dashboards") {
+        await this.carryService.publishCarryDashboard().catch(() => {});
+        await this.carryService.publishCarrierDashboard().catch(() => {});
+        await this.carryService.publishCarrierStatsDashboard().catch(() => {});
+        await this.ticketService.publishDashboard().catch(() => {});
+        await interaction.reply(infoPayload({ title: "Dashboards", lines: ["Republished carry/ticket dashboards."], ephemeral: true }));
+        return true;
+      }
+      if (payload === "toggle_transcript") {
+        this.carryService.setCarryTranscriptEnabled(!this.carryService.isCarryTranscriptEnabled());
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
+      if (payload === "queue_enable" || payload === "queue_disable" || payload === "queue_toggle") {
+        const next = payload === "queue_enable" ? true : payload === "queue_disable" ? false : !this.carryService.isQueueEnabled();
+        this.carryService.setQueueEnabled(next);
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
+      if (payload === "queue_reset") {
+        this.carryService.resetQueue();
+        await this.carryService.publishCarrierDashboard().catch(() => {});
+        await interaction.reply(infoPayload({ title: "Queue", lines: ["Queue reset complete."], ephemeral: true }));
+        return true;
+      }
+      if (payload === "discount_toggle_stacking") {
+        this.db.setBinding("discount_stacking_enabled", !this.db.getBinding("discount_stacking_enabled", false));
+        await interaction.update(this.buildSetupPanel({ messageId, actorId, guild: interaction.guild }));
+        return true;
+      }
       if (
-        ["set_autodelete", "set_service_team_role", "set_service_admin_role", "set_free_limit", "set_role_priority", "discount_static_add", "discount_static_remove", "discount_timed_global"].includes(
-          payload
-        )
+        [
+          "set_autodelete",
+          "set_service_team_role",
+          "set_service_admin_role",
+          "set_free_limit",
+          "set_role_priority",
+          "discount_static_add",
+          "discount_static_remove",
+          "discount_timed_global"
+        ].includes(payload)
       ) {
         const modal = new ModalBuilder().setCustomId(`${SETUP_MODAL_PREFIX}${payload}:${messageId}`).setTitle(payload);
-        const add = (id, label) => new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(TextInputStyle.Short).setRequired(true));
+        const add = (id, label) =>
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(TextInputStyle.Short).setRequired(true));
         if (payload === "set_role_priority") modal.addComponents(add("role", "Role ID or mention"), add("value", "Priority value"));
         else if (payload === "discount_static_add") modal.addComponents(add("amount", "Min Amount"), add("percentage", "Percentage (0-95)"));
         else if (payload === "discount_static_remove") modal.addComponents(add("amount", "Min Amount"));
         else if (payload === "discount_timed_global") modal.addComponents(add("percentage", "Percentage (0-95)"), add("duration", "Duration (e.g. 3h)"));
-        else modal.addComponents(add("value", payload === "set_autodelete" ? "Duration (e.g. 30m)" : ["set_service_team_role", "set_service_admin_role"].includes(payload) ? "Role ID or mention" : "Weekly limit"));
+        else
+          modal.addComponents(
+            add(
+              "value",
+              payload === "set_autodelete"
+                ? "Duration (e.g. 30m)"
+                : ["set_service_team_role", "set_service_admin_role"].includes(payload)
+                  ? "Role ID or mention"
+                  : "Weekly limit"
+            )
+          );
         await interaction.showModal(modal);
         return true;
       }
@@ -518,98 +607,120 @@ class CarrySetupService {
       const actorId = interaction.user?.id || "0";
       const state = this.getState(messageId, actorId);
 
-    if (action === "price") {
-      const parsed = this.carryService.parseCoinsInput(String(interaction.fields.getTextInputValue("price") || "").trim());
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        await interaction.reply(infoPayload({ title: "Invalid Price", lines: ["Use values like 400k or 1.5m."], ephemeral: true }));
+      if (action === "price") {
+        const parsed = this.carryService.parseCoinsInput(String(interaction.fields.getTextInputValue("price") || "").trim());
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          await interaction.reply(infoPayload({ title: "Invalid Price", lines: ["Use values like 400k or 1.5m."], ephemeral: true }));
+          return true;
+        }
+        const updated = this.carryService.setCarryPrice(state.meta.type, state.meta.tier, parsed);
+        await this.carryService.publishCarryDashboard().catch(() => {});
+        await interaction.reply(
+          infoPayload({
+            title: "Price Updated",
+            lines: [updated ? `Set ${state.meta.type} ${state.meta.tier} to ${this.formatCoinsShort(parsed)}.` : "No matching carry type/tier found."],
+            ephemeral: true
+          })
+        );
         return true;
       }
-      const updated = this.carryService.setCarryPrice(state.meta.type, state.meta.tier, parsed);
-      await this.carryService.publishCarryDashboard().catch(() => {});
-      await interaction.reply(infoPayload({ title: "Price Updated", lines: [updated ? `Set ${state.meta.type} ${state.meta.tier} to ${this.formatCoinsShort(parsed)}.` : "No matching carry type/tier found."], ephemeral: true }));
-      return true;
-    }
-    if (action === "pricequick") {
-      const type = String(parts[2] || "");
-      const tier = String(parts[3] || "");
-      const parsed = this.carryService.parseCoinsInput(String(interaction.fields.getTextInputValue("price") || "").trim());
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        await interaction.reply(infoPayload({ title: "Invalid Price", lines: ["Use values like 400k or 1.5m."], ephemeral: true }));
+      if (action === "pricequick") {
+        const type = String(parts[2] || "");
+        const tier = String(parts[3] || "");
+        const parsed = this.carryService.parseCoinsInput(String(interaction.fields.getTextInputValue("price") || "").trim());
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          await interaction.reply(infoPayload({ title: "Invalid Price", lines: ["Use values like 400k or 1.5m."], ephemeral: true }));
+          return true;
+        }
+        const updated = this.carryService.setCarryPrice(type, tier, parsed);
+        await this.carryService.publishCarryDashboard().catch(() => {});
+        await interaction.reply(
+          infoPayload({
+            title: "Price Updated",
+            lines: [updated ? `Set ${type} ${tier} to ${this.formatCoinsShort(parsed)}.` : "No matching carry type/tier found."],
+            ephemeral: true
+          })
+        );
         return true;
       }
-      const updated = this.carryService.setCarryPrice(type, tier, parsed);
-      await this.carryService.publishCarryDashboard().catch(() => {});
-      await interaction.reply(infoPayload({ title: "Price Updated", lines: [updated ? `Set ${type} ${tier} to ${this.formatCoinsShort(parsed)}.` : "No matching carry type/tier found."], ephemeral: true }));
-      return true;
-    }
 
-    if (action === "set_autodelete") {
-      const parsed = ms(String(interaction.fields.getTextInputValue("value") || "").trim());
-      if (!parsed || parsed <= 0) return interaction.reply(infoPayload({ title: "Invalid Duration", lines: ["Use values like 30m or 2h."], ephemeral: true }));
-      this.carryService.setCarryAutoDelete(parsed);
-      await interaction.reply(infoPayload({ title: "AutoDelete Updated", lines: [`New delay: ${ms(parsed)}`], ephemeral: true }));
-      return true;
-    }
+      if (action === "set_autodelete") {
+        const parsed = ms(String(interaction.fields.getTextInputValue("value") || "").trim());
+        if (!parsed || parsed <= 0) return interaction.reply(infoPayload({ title: "Invalid Duration", lines: ["Use values like 30m or 2h."], ephemeral: true }));
+        this.carryService.setCarryAutoDelete(parsed);
+        await interaction.reply(infoPayload({ title: "AutoDelete Updated", lines: [`New delay: ${ms(parsed)}`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "set_service_team_role") {
-      const roleId = String(interaction.fields.getTextInputValue("value") || "").trim().replace(/[<@&>]/g, "");
-      if (!/^\d{17,20}$/.test(roleId)) return interaction.reply(infoPayload({ title: "Invalid Role", lines: ["Provide a role mention or role id."], ephemeral: true }));
-      this.carryService.setServiceTeamRoleId(roleId);
-      await interaction.reply(infoPayload({ title: "Role Updated", lines: [`Service-Team role set to <@&${roleId}>.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "set_service_team_role") {
+        const roleId = String(interaction.fields.getTextInputValue("value") || "")
+          .trim()
+          .replace(/[<@&>]/g, "");
+        if (!/^\d{17,20}$/.test(roleId)) return interaction.reply(infoPayload({ title: "Invalid Role", lines: ["Provide a role mention or role id."], ephemeral: true }));
+        this.carryService.setServiceTeamRoleId(roleId);
+        await interaction.reply(infoPayload({ title: "Role Updated", lines: [`Service-Team role set to <@&${roleId}>.`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "set_service_admin_role") {
-      const roleId = String(interaction.fields.getTextInputValue("value") || "").trim().replace(/[<@&>]/g, "");
-      if (!/^\d{17,20}$/.test(roleId)) return interaction.reply(infoPayload({ title: "Invalid Role", lines: ["Provide a role mention or role id."], ephemeral: true }));
-      this.carryService.setServiceAdminRoleId(roleId);
-      await interaction.reply(infoPayload({ title: "Role Updated", lines: [`Service-Admin role set to <@&${roleId}>.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "set_service_admin_role") {
+        const roleId = String(interaction.fields.getTextInputValue("value") || "")
+          .trim()
+          .replace(/[<@&>]/g, "");
+        if (!/^\d{17,20}$/.test(roleId)) return interaction.reply(infoPayload({ title: "Invalid Role", lines: ["Provide a role mention or role id."], ephemeral: true }));
+        this.carryService.setServiceAdminRoleId(roleId);
+        await interaction.reply(infoPayload({ title: "Role Updated", lines: [`Service-Admin role set to <@&${roleId}>.`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "set_free_limit") {
-      const amount = Number(interaction.fields.getTextInputValue("value"));
-      if (!Number.isInteger(amount) || amount < 0 || amount > 100) return interaction.reply(infoPayload({ title: "Invalid Limit", lines: ["Use a whole number between 0 and 100."], ephemeral: true }));
-      this.carryService.setFreeCarryLimit(amount);
-      await interaction.reply(infoPayload({ title: "Free Carry Updated", lines: [`Weekly limit set to ${amount}.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "set_free_limit") {
+        const amount = Number(interaction.fields.getTextInputValue("value"));
+        if (!Number.isInteger(amount) || amount < 0 || amount > 100)
+          return interaction.reply(infoPayload({ title: "Invalid Limit", lines: ["Use a whole number between 0 and 100."], ephemeral: true }));
+        this.carryService.setFreeCarryLimit(amount);
+        await interaction.reply(infoPayload({ title: "Free Carry Updated", lines: [`Weekly limit set to ${amount}.`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "set_role_priority") {
-      const roleId = String(interaction.fields.getTextInputValue("role") || "").trim().replace(/[<@&>]/g, "");
-      const value = Number(interaction.fields.getTextInputValue("value"));
-      if (!/^\d{17,20}$/.test(roleId) || !Number.isFinite(value)) return interaction.reply(infoPayload({ title: "Invalid Input", lines: ["Provide valid role and numeric value."], ephemeral: true }));
-      this.carryService.setRolePriority(roleId, value);
-      await interaction.reply(infoPayload({ title: "Priority Updated", lines: [`Role <@&${roleId}> set to ${value}.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "set_role_priority") {
+        const roleId = String(interaction.fields.getTextInputValue("role") || "")
+          .trim()
+          .replace(/[<@&>]/g, "");
+        const value = Number(interaction.fields.getTextInputValue("value"));
+        if (!/^\d{17,20}$/.test(roleId) || !Number.isFinite(value))
+          return interaction.reply(infoPayload({ title: "Invalid Input", lines: ["Provide valid role and numeric value."], ephemeral: true }));
+        this.carryService.setRolePriority(roleId, value);
+        await interaction.reply(infoPayload({ title: "Priority Updated", lines: [`Role <@&${roleId}> set to ${value}.`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "discount_static_add") {
-      const amount = Number(interaction.fields.getTextInputValue("amount"));
-      const percentage = Number(interaction.fields.getTextInputValue("percentage"));
-      if (!Number.isInteger(amount) || amount < 1 || !Number.isFinite(percentage) || percentage < 0 || percentage > 95) return interaction.reply(infoPayload({ title: "Invalid Discount", lines: ["Amount >= 1 and percentage 0-95 required."], ephemeral: true }));
-      const id = this.carryService.addDiscountRule({ kind: "static", scope: "global", minAmount: amount, percentage });
-      await interaction.reply(infoPayload({ title: "Discount Added", lines: [`Created static discount #${id}.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "discount_static_add") {
+        const amount = Number(interaction.fields.getTextInputValue("amount"));
+        const percentage = Number(interaction.fields.getTextInputValue("percentage"));
+        if (!Number.isInteger(amount) || amount < 1 || !Number.isFinite(percentage) || percentage < 0 || percentage > 95)
+          return interaction.reply(infoPayload({ title: "Invalid Discount", lines: ["Amount >= 1 and percentage 0-95 required."], ephemeral: true }));
+        const id = this.carryService.addDiscountRule({ kind: "static", scope: "global", minAmount: amount, percentage });
+        await interaction.reply(infoPayload({ title: "Discount Added", lines: [`Created static discount #${id}.`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "discount_static_remove") {
-      const amount = Number(interaction.fields.getTextInputValue("amount"));
-      if (!Number.isInteger(amount) || amount < 1) return interaction.reply(infoPayload({ title: "Invalid Amount", lines: ["Amount must be >= 1."], ephemeral: true }));
-      const changes = this.carryService.removeStaticDiscountByAmount(amount);
-      await interaction.reply(infoPayload({ title: "Discount Removed", lines: [`Removed ${changes} rule(s).`], ephemeral: true }));
-      return true;
-    }
+      if (action === "discount_static_remove") {
+        const amount = Number(interaction.fields.getTextInputValue("amount"));
+        if (!Number.isInteger(amount) || amount < 1) return interaction.reply(infoPayload({ title: "Invalid Amount", lines: ["Amount must be >= 1."], ephemeral: true }));
+        const changes = this.carryService.removeStaticDiscountByAmount(amount);
+        await interaction.reply(infoPayload({ title: "Discount Removed", lines: [`Removed ${changes} rule(s).`], ephemeral: true }));
+        return true;
+      }
 
-    if (action === "discount_timed_global") {
-      const percentage = Number(interaction.fields.getTextInputValue("percentage"));
-      const durationMs = ms(String(interaction.fields.getTextInputValue("duration") || "").trim());
-      if (!Number.isFinite(percentage) || percentage < 0 || percentage > 95 || !durationMs || durationMs <= 0) return interaction.reply(infoPayload({ title: "Invalid Timed Discount", lines: ["Percentage 0-95 and valid duration required."], ephemeral: true }));
-      const now = Date.now();
-      const id = this.carryService.addDiscountRule({ kind: "timed", scope: "global", percentage, startsAt: now, endsAt: now + durationMs });
-      await interaction.reply(infoPayload({ title: "Timed Discount Added", lines: [`Created timed discount #${id}.`], ephemeral: true }));
-      return true;
-    }
+      if (action === "discount_timed_global") {
+        const percentage = Number(interaction.fields.getTextInputValue("percentage"));
+        const durationMs = ms(String(interaction.fields.getTextInputValue("duration") || "").trim());
+        if (!Number.isFinite(percentage) || percentage < 0 || percentage > 95 || !durationMs || durationMs <= 0)
+          return interaction.reply(infoPayload({ title: "Invalid Timed Discount", lines: ["Percentage 0-95 and valid duration required."], ephemeral: true }));
+        const now = Date.now();
+        const id = this.carryService.addDiscountRule({ kind: "timed", scope: "global", percentage, startsAt: now, endsAt: now + durationMs });
+        await interaction.reply(infoPayload({ title: "Timed Discount Added", lines: [`Created timed discount #${id}.`], ephemeral: true }));
+        return true;
+      }
 
       return false;
     } catch (error) {
@@ -623,4 +734,3 @@ class CarrySetupService {
 }
 
 module.exports = { CarrySetupService, SETUP_PREFIX, SETUP_MODAL_PREFIX };
-

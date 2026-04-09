@@ -73,7 +73,10 @@ function formatUserList(results, status, limit = 15) {
     return "None";
   }
 
-  const sliced = users.slice(0, limit).map((user) => `\`${user}\``).join(", ");
+  const sliced = users
+    .slice(0, limit)
+    .map((user) => `\`${user}\``)
+    .join(", ");
   if (users.length > limit) {
     return `${sliced} +${users.length - limit} more`;
   }
@@ -166,10 +169,10 @@ module.exports = {
         const elapsedSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
         const failedUsers = truncateText(
           summary.results
-          .filter((result) => result.status === "failed")
-          .slice(0, 8)
-          .map((result) => `\`${result.username}\` (${result.reason})`)
-          .join("\n")
+            .filter((result) => result.status === "failed")
+            .slice(0, 8)
+            .map((result) => `\`${result.username}\` (${result.reason})`)
+            .join("\n")
         );
 
         const finalEmbed = new SuccessEmbed("Rankup all complete.")

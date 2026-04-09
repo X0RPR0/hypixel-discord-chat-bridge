@@ -54,13 +54,9 @@ class GiveawayService {
         defaultChannelId: typeof state?.settings?.defaultChannelId === "string" && state.settings.defaultChannelId.length > 0 ? state.settings.defaultChannelId : null
       },
       activeGiveaways: Array.isArray(state?.activeGiveaways)
-        ? state.activeGiveaways
-            .map((entry) => this.normalizeGiveaway(entry))
-            .filter((entry) => entry && Number.isFinite(entry.endsAt) && entry.endsAt > this.now())
+        ? state.activeGiveaways.map((entry) => this.normalizeGiveaway(entry)).filter((entry) => entry && Number.isFinite(entry.endsAt) && entry.endsAt > this.now())
         : [],
-      usedIds: Array.isArray(state?.usedIds)
-        ? [...new Set(state.usedIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
-        : []
+      usedIds: Array.isArray(state?.usedIds) ? [...new Set(state.usedIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))] : []
     };
 
     const activeIds = new Set(normalized.activeGiveaways.map((entry) => entry.id));
@@ -572,7 +568,9 @@ class GiveawayService {
     const members = Array.isArray(guild?.members) ? guild.members : [];
     const byUuid = new Map();
     for (const member of members) {
-      const uuid = String(member?.uuid || "").replaceAll("-", "").toLowerCase();
+      const uuid = String(member?.uuid || "")
+        .replaceAll("-", "")
+        .toLowerCase();
       if (!uuid) {
         continue;
       }
@@ -831,9 +829,7 @@ class GiveawayService {
       return;
     }
 
-    const winnerText = winners
-      .map((winner) => (winner.type === "ingame" ? winner.value : `discord:${winner.value}`))
-      .join(", ");
+    const winnerText = winners.map((winner) => (winner.type === "ingame" ? winner.value : `discord:${winner.value}`)).join(", ");
     this.sendGuildAnnouncement(`Giveaway #${id} ended. Winner(s): ${winnerText}`);
   }
 

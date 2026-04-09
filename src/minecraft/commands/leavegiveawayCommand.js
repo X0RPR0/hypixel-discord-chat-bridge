@@ -11,8 +11,8 @@ class LeaveGiveawayCommand extends minecraftCommand {
     this.description = "Leave a giveaway by ID.";
     this.options = [
       {
-        name: "\"id\"",
-        description: "Example: !leavegiveaway \"1\"",
+        name: '"id"',
+        description: 'Example: !leavegiveaway "1"',
         required: true
       }
     ];

@@ -101,7 +101,11 @@ module.exports = {
               member: interaction.member
             });
             if (!result.ok) {
-              if (String(result.reason || "").toLowerCase().includes("already ended")) {
+              if (
+                String(result.reason || "")
+                  .toLowerCase()
+                  .includes("already ended")
+              ) {
                 await giveawayService.disableGiveawayButtons(interaction.message).catch(() => {});
               }
               return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });
@@ -116,7 +120,11 @@ module.exports = {
               userId: interaction.user.id
             });
             if (!result.ok) {
-              if (String(result.reason || "").toLowerCase().includes("already ended")) {
+              if (
+                String(result.reason || "")
+                  .toLowerCase()
+                  .includes("already ended")
+              ) {
                 await giveawayService.disableGiveawayButtons(interaction.message).catch(() => {});
               }
               return interaction.editReply({ embeds: [new ErrorEmbed(result.reason)] });

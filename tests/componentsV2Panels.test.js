@@ -25,4 +25,3 @@ describe("componentsV2Panels", () => {
     expect(Number(payload.flags) & Number(MessageFlags.Ephemeral)).toBe(Number(MessageFlags.Ephemeral));
   });
 });
-

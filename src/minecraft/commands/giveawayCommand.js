@@ -37,8 +37,8 @@ class GiveawayCommand extends minecraftCommand {
     this.description = "Start a giveaway.";
     this.options = [
       {
-        name: "\"prize\" [\"time\"] [\"winners\"]",
-        description: "Example: !giveaway \"1x Booster\" \"2h\" \"2\"",
+        name: '"prize" ["time"] ["winners"]',
+        description: 'Example: !giveaway "1x Booster" "2h" "2"',
         required: false
       }
     ];

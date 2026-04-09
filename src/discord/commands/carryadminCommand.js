@@ -45,25 +45,33 @@ module.exports = {
           s
             .setName("carry-dashboard")
             .setDescription("Set carry request dashboard channel")
-            .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+            .addChannelOption((o) =>
+              o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            )
         )
         .addSubcommand((s) =>
           s
             .setName("carrier-dashboard")
             .setDescription("Set carrier dashboard channel")
-            .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+            .addChannelOption((o) =>
+              o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            )
         )
         .addSubcommand((s) =>
           s
             .setName("carrier-stats")
             .setDescription("Set carrier stats channel")
-            .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+            .addChannelOption((o) =>
+              o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            )
         )
         .addSubcommand((s) =>
           s
             .setName("ticket-dashboard")
             .setDescription("Set ticket dashboard channel")
-            .addChannelOption((o) => o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
+            .addChannelOption((o) =>
+              o.setName("channel").setDescription("Target channel").setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+            )
         )
         .addSubcommand((s) =>
           s
@@ -110,7 +118,10 @@ module.exports = {
             .addStringOption((o) => o.setName("tiers").setDescription("Comma-separated tiers").setRequired(true))
         )
         .addSubcommand((s) =>
-          s.setName("remove").setDescription("Remove carry type").addStringOption((o) => o.setName("name").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+          s
+            .setName("remove")
+            .setDescription("Remove carry type")
+            .addStringOption((o) => o.setName("name").setDescription("Carry type").setRequired(true).setAutocomplete(true))
         )
         .addSubcommand((s) =>
           s
@@ -121,10 +132,16 @@ module.exports = {
             .addStringOption((o) => o.setName("price").setDescription("Price (e.g. 400000, 400k, 1.5m)").setRequired(true))
         )
         .addSubcommand((s) =>
-          s.setName("enable").setDescription("Enable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+          s
+            .setName("enable")
+            .setDescription("Enable carry type")
+            .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
         )
         .addSubcommand((s) =>
-          s.setName("disable").setDescription("Disable carry type").addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
+          s
+            .setName("disable")
+            .setDescription("Disable carry type")
+            .addStringOption((o) => o.setName("type").setDescription("Carry type").setRequired(true).setAutocomplete(true))
         )
     )
     .addSubcommandGroup((g) =>
@@ -154,7 +171,12 @@ module.exports = {
             .addIntegerOption((o) => o.setName("amount").setDescription("Minimum amount").setRequired(true).setMinValue(1))
             .addNumberOption((o) => o.setName("percentage").setDescription("Discount percentage").setRequired(true).setMinValue(0).setMaxValue(95))
         )
-        .addSubcommand((s) => s.setName("remove").setDescription("Remove static global discount").addIntegerOption((o) => o.setName("amount").setRequired(true).setDescription("Minimum amount")))
+        .addSubcommand((s) =>
+          s
+            .setName("remove")
+            .setDescription("Remove static global discount")
+            .addIntegerOption((o) => o.setName("amount").setRequired(true).setDescription("Minimum amount"))
+        )
         .addSubcommand((s) =>
           s
             .setName("timed-global")
@@ -196,7 +218,12 @@ module.exports = {
             .addIntegerOption((o) => o.setName("amount").setRequired(true).setDescription("Min amount").setMinValue(1))
             .addNumberOption((o) => o.setName("percentage").setRequired(true).setDescription("Percent").setMinValue(0).setMaxValue(95))
         )
-        .addSubcommand((s) => s.setName("stacking").setDescription("Enable/disable stacking policy").addBooleanOption((o) => o.setName("enabled").setRequired(true).setDescription("Enabled")))
+        .addSubcommand((s) =>
+          s
+            .setName("stacking")
+            .setDescription("Enable/disable stacking policy")
+            .addBooleanOption((o) => o.setName("enabled").setRequired(true).setDescription("Enabled"))
+        )
     )
     .addSubcommandGroup((g) =>
       g
@@ -265,10 +292,7 @@ module.exports = {
         .toLowerCase();
 
       if (focused.name === "type" || focused.name === "name") {
-        const rows = carryService.db
-          .getConnection()
-          .prepare("SELECT DISTINCT lower(carry_type) AS carry_type FROM carry_catalog ORDER BY carry_type ASC")
-          .all();
+        const rows = carryService.db.getConnection().prepare("SELECT DISTINCT lower(carry_type) AS carry_type FROM carry_catalog ORDER BY carry_type ASC").all();
         const choices = rows
           .map((r) => String(r.carry_type || ""))
           .filter(Boolean)
@@ -405,7 +429,14 @@ module.exports = {
       if (sub === "add") {
         const name = interaction.options.getString("name", true);
         const tiers = interaction.options.getString("tiers", true);
-        if (String(name).toLowerCase() === "slayer_blaze" && String(tiers).toLowerCase().split(",").map((x) => x.trim()).some((x) => ["5", "t5"].includes(x))) {
+        if (
+          String(name).toLowerCase() === "slayer_blaze" &&
+          String(tiers)
+            .toLowerCase()
+            .split(",")
+            .map((x) => x.trim())
+            .some((x) => ["5", "t5"].includes(x))
+        ) {
           return interaction.editReply(errorPayload("Blaze tier 5 is not available and cannot be added."));
         }
         const count = carryService.addCarryTypeWithTiers(name, tiers);
@@ -478,7 +509,9 @@ module.exports = {
         await carryService.publishCarrierDashboard().catch(() => {});
         const details = Array.isArray(result.errorDetails) && result.errorDetails.length ? `\nDetails: ${result.errorDetails.join(" | ")}` : "";
         return interaction.editReply(
-          successPayload(`Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.${details}`)
+          successPayload(
+            `Repair done. Checked: ${result.checked}, forum threads fixed: ${result.threadBackfilled}, execution channels fixed: ${result.channelBackfilled}, errors: ${result.errors}.${details}`
+          )
         );
       }
 
@@ -554,7 +587,9 @@ module.exports = {
       if (sub === "stacking") {
         const enabled = interaction.options.getBoolean("enabled", true);
         carryService.db.setBinding("discount_stacking_enabled", enabled);
-        return interaction.editReply(successPayload(`Stacking ${enabled ? "enabled" : "disabled"}. Policy still enforces only bulk + one scope discount and no multi-scope stacking.`));
+        return interaction.editReply(
+          successPayload(`Stacking ${enabled ? "enabled" : "disabled"}. Policy still enforces only bulk + one scope discount and no multi-scope stacking.`)
+        );
       }
     }
 
@@ -635,7 +670,9 @@ module.exports = {
         }
 
         const details = result.errorDetails?.length ? `\nErrors: ${result.errorDetails.join(" | ")}` : "";
-        return interaction.editReply(successPayload(`Delete-old complete. Matched: **${result.matched}**, deleted: **${result.deleted}**, failed: **${result.failed}**.${details}`));
+        return interaction.editReply(
+          successPayload(`Delete-old complete. Matched: **${result.matched}**, deleted: **${result.deleted}**, failed: **${result.failed}**.${details}`)
+        );
       }
     }
 

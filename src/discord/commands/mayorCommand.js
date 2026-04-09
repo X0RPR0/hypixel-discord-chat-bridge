@@ -158,7 +158,7 @@ function resolveScheduledMayorEvents(mayor, nowMs) {
       index: index + 1
     }));
 
-  let nextEvent = sorted.find((event) => event.timestamp >= nowMs);
+  const nextEvent = sorted.find((event) => event.timestamp >= nowMs);
 
   return {
     events: sorted,
@@ -271,10 +271,6 @@ function buildElectionField(data) {
     name: `🗳️ Current Election (Year ${electionYear})`,
     value: lines.join("\n")
   };
-}
-
-function buildButtons(interactionId, disabled = false) {
-  return buildButtonsForMode("base", interactionId, disabled);
 }
 
 function buildButtonsForMode(mode, interactionId, disabled = false) {

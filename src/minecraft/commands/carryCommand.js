@@ -28,7 +28,9 @@ class CarryCommand extends minecraftCommand {
         return this.send(this.getUsage());
       }
 
-      const type = String(args[1] || "").trim().toLowerCase();
+      const type = String(args[1] || "")
+        .trim()
+        .toLowerCase();
       const amount = Number(args[2]);
       if (!type || !Number.isInteger(amount) || amount <= 0) {
         return this.send(this.getUsage());

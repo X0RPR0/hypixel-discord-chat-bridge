@@ -12,4 +12,3 @@ describe("carry-setup command", () => {
     expect(show).toHaveBeenCalledWith(interaction);
   });
 });
-

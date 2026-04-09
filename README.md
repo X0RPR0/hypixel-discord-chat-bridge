@@ -303,25 +303,25 @@ The autoLimbo is ability to toggle if the bot is sent to Limbo or stays in publi
 
 `Discord`
 
-| Command   | Description                                      | Syntax                      | Example                             | Response                           |
-| --------- | ------------------------------------------------ | --------------------------- | ----------------------------------- | ---------------------------------- |
-| blacklist | Blacklists specified user from using bot.        | `/blacklist [arg] [player]` | `/blacklist add DuckySoSkilled`     | ![](https://imgur.com/Ybaj9wj.png) |
-| demote    | Demotes the given user by one guild rank.        | `/demote [player]`          | `/demote DuckySoSkilled`            | ![](https://imgur.com/liHDaOW.png) |
-| guildtop  | Top 10 members with the most guild xp.           | `/guildtop [number]`        | `/guildtop 5`                       | ![](https://imgur.com/7oV77ey.png) |
-| help      | Shows help menu.                                 | `/help`                     | `/help`                             | ![](https://imgur.com/CLka3pQ.png) |
-| info      | Shows information about bot.                     | `/info`                     | `/info`                             | ![](https://imgur.com/pRONsiE.png) |
-| invite    | Invites the specified user to the guild.         | `/invite [player]`          | `/invite DuckySoSkilled`            | ![](https://imgur.com/DIfzSS7.png) |
-| kick      | Kicks the specified user from the guild.         | `/kick [player] [reason]`   | `/kick DuckySoSkilled`              | ![](https://imgur.com/auMbSD9.png) |
-| mute      | Mutes the given user for a given amount of time. | `/mute [player] [time]`     | `/mute DuckySoSkilled 1h`           | ![](https://imgur.com/fQxoyHv.png) |
-| online    | View online player in the guild.                 | `/online`                   | `/online`                           | ![](https://imgur.com/Ny4vTRQ.png) |
-| checkactivity | Audit guild activity (all members or one member). | `/checkactivity [user] [username] [status] [sort]` | `/checkactivity status:inactive` | - |
-| leaderboard | Guild leaderboard preview or auto-updating setup. | `/leaderboard [metric] [setup] [top]` | `/leaderboard setup:true metric:score` | - |
-| execute   | Executes commands as the minecraft bot.          | `/execute [command]`        | `/execute /g unmute DuckySoSkilled` | ![](https://imgur.com/fBi2Bv2.png) |
-| ping      | Shows the latency of the bot.                    | `/ping`                     | `/ping`                             | ![](https://imgur.com/9sHFgGT.png) |
-| promote   | Promotes the specified user by 1 rank.           | `/promote [player]`         | `/promote DuckySoSkilled`           | ![](https://imgur.com/wmMWP5b.png) |
-| restart   | Restarts the bot.                                | `/restart`                  | `/restart`                          | ![](https://imgur.com/Zn1xnBc.png) |
-| unmute    | Unmutes the given user.                          | `/unmute [player]`          | `/unmute DuckySoSkilled`            | ![](https://imgur.com/nlu8lo6.png) |
-| uptime    | Shows the uptime of the bot.                     | `/uptime`                   | `/uptime`                           | ![](https://imgur.com/R1cnJfn.png) |
+| Command       | Description                                       | Syntax                                             | Example                                | Response                           |
+| ------------- | ------------------------------------------------- | -------------------------------------------------- | -------------------------------------- | ---------------------------------- |
+| blacklist     | Blacklists specified user from using bot.         | `/blacklist [arg] [player]`                        | `/blacklist add DuckySoSkilled`        | ![](https://imgur.com/Ybaj9wj.png) |
+| demote        | Demotes the given user by one guild rank.         | `/demote [player]`                                 | `/demote DuckySoSkilled`               | ![](https://imgur.com/liHDaOW.png) |
+| guildtop      | Top 10 members with the most guild xp.            | `/guildtop [number]`                               | `/guildtop 5`                          | ![](https://imgur.com/7oV77ey.png) |
+| help          | Shows help menu.                                  | `/help`                                            | `/help`                                | ![](https://imgur.com/CLka3pQ.png) |
+| info          | Shows information about bot.                      | `/info`                                            | `/info`                                | ![](https://imgur.com/pRONsiE.png) |
+| invite        | Invites the specified user to the guild.          | `/invite [player]`                                 | `/invite DuckySoSkilled`               | ![](https://imgur.com/DIfzSS7.png) |
+| kick          | Kicks the specified user from the guild.          | `/kick [player] [reason]`                          | `/kick DuckySoSkilled`                 | ![](https://imgur.com/auMbSD9.png) |
+| mute          | Mutes the given user for a given amount of time.  | `/mute [player] [time]`                            | `/mute DuckySoSkilled 1h`              | ![](https://imgur.com/fQxoyHv.png) |
+| online        | View online player in the guild.                  | `/online`                                          | `/online`                              | ![](https://imgur.com/Ny4vTRQ.png) |
+| checkactivity | Audit guild activity (all members or one member). | `/checkactivity [user] [username] [status] [sort]` | `/checkactivity status:inactive`       | -                                  |
+| leaderboard   | Guild leaderboard preview or auto-updating setup. | `/leaderboard [metric] [setup] [top]`              | `/leaderboard setup:true metric:score` | -                                  |
+| execute       | Executes commands as the minecraft bot.           | `/execute [command]`                               | `/execute /g unmute DuckySoSkilled`    | ![](https://imgur.com/fBi2Bv2.png) |
+| ping          | Shows the latency of the bot.                     | `/ping`                                            | `/ping`                                | ![](https://imgur.com/9sHFgGT.png) |
+| promote       | Promotes the specified user by 1 rank.            | `/promote [player]`                                | `/promote DuckySoSkilled`              | ![](https://imgur.com/wmMWP5b.png) |
+| restart       | Restarts the bot.                                 | `/restart`                                         | `/restart`                             | ![](https://imgur.com/Zn1xnBc.png) |
+| unmute        | Unmutes the given user.                           | `/unmute [player]`                                 | `/unmute DuckySoSkilled`               | ![](https://imgur.com/nlu8lo6.png) |
+| uptime        | Shows the uptime of the bot.                      | `/uptime`                                          | `/uptime`                              | ![](https://imgur.com/R1cnJfn.png) |
 
 `Minecraft`
 
@@ -350,7 +350,7 @@ The autoLimbo is ability to toggle if the bot is sent to Limbo or stays in publi
 | skywars      | Skywars stats of specified user.            | `!skywars [player]`            | `!skywars DuckySoSkilled`  | `[38✫] Refraction KDR: 6.04 WLR: 1.01 WS: 0`                                                                                                                                                                                 |
 | skyblock     | Skyblock Stats of specified user.           | `!skyblock [player]`           | `!skyblock DeathStreeks`   | `DeathStreeks's Level » 354.59 Skill Average » 54.4 Slayer » 7,918,100 Catacombs » 62 Class Average » 50 Networth » 133 B Accessories » 98 Recombobulated » 97 Enriched » 44`                                                |
 | personalbest | View Best times of a user's dungeon runs.   | `!pb [player] [floor] [score]` | `!pb For_Science51 F7 S+`  | `For_Science51's PB on F7 woth S+ score is 4:57`                                                                                                                                                                             |
-| roast        | Context-aware skill issue roast.            | `!roast [player]`              | `!roast Jamesien`          | `bro stacked issues like enchantments...`                                                                                                                                                                                     |
+| roast        | Context-aware skill issue roast.            | `!roast [player]`              | `!roast Jamesien`          | `bro stacked issues like enchantments...`                                                                                                                                                                                    |
 | slayer       | Slayer of specified user.                   | `!slayer [player] [type]`      | `!slayer DeathStreeks`     | `DeathStreeks's Slayer -  Zombie: Level: 9 Experience: 3,165,000 Spider: Level: 9 Experience: 1,000,625 Wolf: Level: 9 Experience: 1,002,000 Enderman: Level: 9 Experience: 1,715,475 Blaze: Level: 9 Experience: 1,035,000` |
 | UHC          | UHC Stats of specified user.                | `!UHC [player]`                | `!UHC DuckySoSkilled`      | `[6✫] Refraction KDR: 2.54 WLR: 69 Heads: 578`                                                                                                                                                                               |
 | woolwars     | WoolWars stats of specified user.           | `!woolwars [player]`           | `!woolwars DuckySoSkilled` | `[2✫] DuckySoSkilled » W: 5 WLR: 0.5 KDR: 1.19 BB: 37 WP: 45`                                                                                                                                                                |
@@ -1041,9 +1041,4 @@ If you think that message format is boring, you can check out my repository for 
 - [DawJaw](https://dawjaw.net/jacobs)
 - [Soopy](https://soopy.dev/)
 
-
 Roast command config is stored in roastConfig.json (tracked in git).
-
-
-
-

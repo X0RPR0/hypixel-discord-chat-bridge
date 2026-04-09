@@ -26,7 +26,7 @@ describe("minecraft command send", () => {
     command.source = "pm";
     command.replyTarget = "Kimberlyx3";
 
-    const promise = command.send("Usage: !giveaway \"prize\" [\"time\"] [\"winners\"]");
+    const promise = command.send('Usage: !giveaway "prize" ["time"] ["winners"]');
     jest.advanceTimersByTime(600);
     await promise;
 

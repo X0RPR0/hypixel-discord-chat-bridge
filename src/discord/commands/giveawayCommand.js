@@ -7,7 +7,14 @@ function parseRanks(input) {
     return [];
   }
 
-  return [...new Set(input.split(",").map((rank) => rank.trim()).filter((rank) => rank.length > 0))];
+  return [
+    ...new Set(
+      input
+        .split(",")
+        .map((rank) => rank.trim())
+        .filter((rank) => rank.length > 0)
+    )
+  ];
 }
 
 module.exports = {
@@ -37,10 +44,7 @@ module.exports = {
           option
             .setName("mode")
             .setDescription("Who can start giveaways")
-            .addChoices(
-              { name: "Everyone", value: "everyone" },
-              { name: "Bridge Admin Only", value: "bridge_admin_only" }
-            )
+            .addChoices({ name: "Everyone", value: "everyone" }, { name: "Bridge Admin Only", value: "bridge_admin_only" })
         )
         .addStringOption((option) => option.setName("ingame_ranks").setDescription("Comma separated in-game ranks allowed to start giveaways"))
         .addBooleanOption((option) => option.setName("clear_ranks").setDescription("Clear in-game rank allowlist"))

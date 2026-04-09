@@ -15,11 +15,7 @@ describe("DiscountEngine", () => {
     const { db, dbPath } = await makeDb("discount-engine-1");
     const conn = db.getConnection();
 
-    conn
-      .prepare(
-        "INSERT INTO discount_rules (kind, scope, min_amount, percentage, active, created_at) VALUES ('static', 'global', 2, 10, 1, ?)"
-      )
-      .run(Date.now());
+    conn.prepare("INSERT INTO discount_rules (kind, scope, min_amount, percentage, active, created_at) VALUES ('static', 'global', 2, 10, 1, ?)").run(Date.now());
 
     const now = Date.now();
     conn
@@ -49,14 +45,10 @@ describe("DiscountEngine", () => {
     const { db, dbPath } = await makeDb("discount-engine-2");
     const conn = db.getConnection();
 
-    conn
-      .prepare("INSERT INTO discount_rules (kind, scope, min_amount, percentage, active, created_at) VALUES ('static', 'global', 3, 10, 1, ?)")
-      .run(Date.now());
+    conn.prepare("INSERT INTO discount_rules (kind, scope, min_amount, percentage, active, created_at) VALUES ('static', 'global', 3, 10, 1, ?)").run(Date.now());
 
     conn
-      .prepare(
-        "INSERT INTO discount_rules (kind, scope, category, min_amount, percentage, active, created_at) VALUES ('bulk', 'category', 'dungeons', 3, 5, 1, ?)"
-      )
+      .prepare("INSERT INTO discount_rules (kind, scope, category, min_amount, percentage, active, created_at) VALUES ('bulk', 'category', 'dungeons', 3, 5, 1, ?)")
       .run(Date.now());
 
     const engine = new DiscountEngine(db);

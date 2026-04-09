@@ -124,10 +124,8 @@ class RoastCommand extends minecraftCommand {
       }
 
       if (!ranked.length) {
-        const fallback =
-          inventoryOffProfiles.find((entry) => entry.profileData?.selected) ||
-          inventoryOffProfiles[0] ||
-          {
+        const fallback = inventoryOffProfiles.find((entry) => entry.profileData?.selected) ||
+          inventoryOffProfiles[0] || {
             profileData: allProfiles.find((entry) => entry.selected) || allProfiles[0],
             profile: (allProfiles.find((entry) => entry.selected) || allProfiles[0])?.members?.[uuid],
             museum: null,
@@ -156,7 +154,10 @@ class RoastCommand extends minecraftCommand {
     } else {
       profileData = allProfiles.find((entry) => String(entry?.cute_name || "").toLowerCase() === requestedProfile);
       if (!profileData) {
-        const availableProfiles = allProfiles.map((entry) => entry?.cute_name).filter(Boolean).join(", ");
+        const availableProfiles = allProfiles
+          .map((entry) => entry?.cute_name)
+          .filter(Boolean)
+          .join(", ");
         throw `Profile \`${requestedProfile}\` not found. Available: ${availableProfiles || "none"}`;
       }
     }
@@ -195,11 +196,7 @@ class RoastCommand extends minecraftCommand {
     const cataLevel = Number(dungeons?.dungeons?.levelWithProgress ?? 0);
     const slayer = getSlayer(profile);
     const slayerTotal = slayer
-      ? Number(
-          ["zombie", "spider", "wolf", "enderman", "blaze", "vampire"]
-            .map((key) => Number(slayer?.[key]?.level || 0))
-            .reduce((acc, value) => acc + value, 0)
-        )
+      ? Number(["zombie", "spider", "wolf", "enderman", "blaze", "vampire"].map((key) => Number(slayer?.[key]?.level || 0)).reduce((acc, value) => acc + value, 0))
       : 0;
 
     const hypixelPlayer = await hypixel.getPlayer(uuid, { guild: false }).catch(() => null);

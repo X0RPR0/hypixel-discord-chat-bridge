@@ -98,7 +98,9 @@ class ConnectionWrapper {
       } catch (error) {
         try {
           this.db.exec("ROLLBACK");
-        } catch {}
+        } catch (rollbackError) {
+          void rollbackError;
+        }
         this.inTransaction = false;
         throw error;
       }
@@ -160,7 +162,9 @@ class CarryDatabase {
     const tryExec = (sql) => {
       try {
         db.exec(sql);
-      } catch {}
+      } catch (migrationError) {
+        void migrationError;
+      }
     };
 
     db.exec(`

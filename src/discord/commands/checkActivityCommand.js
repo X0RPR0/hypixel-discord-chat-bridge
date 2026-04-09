@@ -241,11 +241,13 @@ function buildMemberEmbed(item) {
   const lastLogin = formatLastSeen(item.lastActivityTs, item.nowTs);
   const inactivityLine = item.inactivityNotice ? `Yes - ${item.inactivityReason || "No reason provided"}` : "No";
 
-  return new Embed().setTitle(`Activity Check: ${item.username}`).setDescription(
-    `Status: \`${item.status}\`\nDiscord: ${linked}\nGuild Rank: \`${item.guildRank || "Unknown"}\`\nLast Login: \`${lastLogin}\`\nPlaytime (30d): \`${formatDuration(
-      item.playtime30dSeconds
-    )}\`\nChat (30d): \`${item.chat30d}\`\nWeekly GEXP: \`${item.weeklyExperience.toLocaleString()}\`\nInactivity Notice: \`${inactivityLine}\``
-  );
+  return new Embed()
+    .setTitle(`Activity Check: ${item.username}`)
+    .setDescription(
+      `Status: \`${item.status}\`\nDiscord: ${linked}\nGuild Rank: \`${item.guildRank || "Unknown"}\`\nLast Login: \`${lastLogin}\`\nPlaytime (30d): \`${formatDuration(
+        item.playtime30dSeconds
+      )}\`\nChat (30d): \`${item.chat30d}\`\nWeekly GEXP: \`${item.weeklyExperience.toLocaleString()}\`\nInactivity Notice: \`${inactivityLine}\``
+    );
 }
 
 async function buildAuditItem({ guildMember, inactivityMap, linkedMap, nowTs, thresholds }) {
@@ -326,9 +328,17 @@ async function resolveTargetMember({ guildMembers, userOption, usernameOption, l
 
 function buildNavigationRow(pageIndex, totalPages, interactionId) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`checkactivity:prev:${interactionId}`).setLabel("Prev").setStyle(ButtonStyle.Secondary).setDisabled(pageIndex <= 0),
+    new ButtonBuilder()
+      .setCustomId(`checkactivity:prev:${interactionId}`)
+      .setLabel("Prev")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(pageIndex <= 0),
     new ButtonBuilder().setCustomId(`checkactivity:jump:${interactionId}`).setLabel("Jump").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`checkactivity:next:${interactionId}`).setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(pageIndex >= totalPages - 1)
+    new ButtonBuilder()
+      .setCustomId(`checkactivity:next:${interactionId}`)
+      .setLabel("Next")
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(pageIndex >= totalPages - 1)
   );
 }
 
@@ -346,9 +356,7 @@ async function refreshGuildUsernameCache() {
       return;
     }
 
-    const maybeNames = members
-      .map((member) => member.nickname || member.name || null)
-      .filter((value) => typeof value === "string" && value.length > 0);
+    const maybeNames = members.map((member) => member.nickname || member.name || null).filter((value) => typeof value === "string" && value.length > 0);
 
     let usernames = [];
     if (maybeNames.length > 0) {
@@ -396,12 +404,7 @@ module.exports = {
       option
         .setName("status")
         .setDescription("Status filter (guild view only)")
-        .addChoices(
-          { name: "All", value: "all" },
-          { name: "Inactive", value: "inactive" },
-          { name: "Warning", value: "warning" },
-          { name: "Active", value: "active" }
-        )
+        .addChoices({ name: "All", value: "all" }, { name: "Inactive", value: "inactive" }, { name: "Warning", value: "warning" }, { name: "Active", value: "active" })
     )
     .addStringOption((option) =>
       option
@@ -528,11 +531,7 @@ module.exports = {
 
       if (buttonInteraction.customId === `checkactivity:jump:${interaction.id}`) {
         const modal = new ModalBuilder().setCustomId(`checkactivity:jumpmodal:${interaction.id}`).setTitle("Jump To Page");
-        const input = new TextInputBuilder()
-          .setCustomId("page")
-          .setLabel(`Page number (1-${pages.length})`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
+        const input = new TextInputBuilder().setCustomId("page").setLabel(`Page number (1-${pages.length})`).setStyle(TextInputStyle.Short).setRequired(true);
 
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await buttonInteraction.showModal(modal);

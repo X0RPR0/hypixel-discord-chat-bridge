@@ -371,9 +371,7 @@ class JoinRequestManager {
     }
 
     const oldUsername =
-      history.lastKnownUsername && history.lastKnownUsername.toLowerCase() !== String(request?.username || "").toLowerCase()
-        ? history.lastKnownUsername
-        : null;
+      history.lastKnownUsername && history.lastKnownUsername.toLowerCase() !== String(request?.username || "").toLowerCase() ? history.lastKnownUsername : null;
 
     return {
       oldUsername,

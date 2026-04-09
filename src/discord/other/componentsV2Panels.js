@@ -1,12 +1,4 @@
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ContainerBuilder,
-  MessageFlags,
-  SeparatorBuilder,
-  TextDisplayBuilder
-} = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, SeparatorBuilder, TextDisplayBuilder } = require("discord.js");
 
 function chunkTextDisplays(lines, size = 3) {
   const out = [];
@@ -25,18 +17,7 @@ function makeSection(title, lines = []) {
   return makeText(content);
 }
 
-function makePanel({
-  title,
-  status = null,
-  sections = [],
-  topRows = [],
-  actions = [],
-  tabs = [],
-  nav = [],
-  extraRows = [],
-  accentColor = 0x5865f2,
-  footer = null
-}) {
+function makePanel({ title, status = null, sections = [], topRows = [], actions = [], tabs = [], nav = [], extraRows = [], accentColor = 0x5865f2, footer = null }) {
   const container = new ContainerBuilder().setAccentColor(accentColor);
   const headerLines = [`## ${title}`];
   if (status) headerLines.push(`**Status:** ${status}`);

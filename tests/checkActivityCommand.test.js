@@ -32,11 +32,7 @@ describe("checkActivity helpers", () => {
   });
 
   test("status filter keeps only requested tag", () => {
-    const items = [
-      { status: "ACTIVE" },
-      { status: "WARNING" },
-      { status: "INACTIVE" }
-    ];
+    const items = [{ status: "ACTIVE" }, { status: "WARNING" }, { status: "INACTIVE" }];
 
     expect(applyStatusFilter(items, "inactive")).toHaveLength(1);
     expect(applyStatusFilter(items, "all")).toHaveLength(3);

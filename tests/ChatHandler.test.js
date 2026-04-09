@@ -169,7 +169,7 @@ describe("ChatHandler", () => {
 
   describe("getIncomingPrivateMessage", () => {
     it("parses incoming PM command format", () => {
-      const parsed = chatHandler.getIncomingPrivateMessage("From [MVP+] Kimberlyx3: !giveaway \"Coins\" \"1d\"");
+      const parsed = chatHandler.getIncomingPrivateMessage('From [MVP+] Kimberlyx3: !giveaway "Coins" "1d"');
       expect(parsed).toEqual({
         username: "Kimberlyx3",
         message: '!giveaway "Coins" "1d"'
@@ -184,8 +184,8 @@ describe("ChatHandler", () => {
 
   describe("isGiveawayCommand", () => {
     it("accepts giveaway aliases", () => {
-      expect(chatHandler.isGiveawayCommand("!giveaway \"x\"")).toBe(true);
-      expect(chatHandler.isGiveawayCommand("!jg \"1\"")).toBe(true);
+      expect(chatHandler.isGiveawayCommand('!giveaway "x"')).toBe(true);
+      expect(chatHandler.isGiveawayCommand('!jg "1"')).toBe(true);
       expect(chatHandler.isGiveawayCommand("!ags")).toBe(true);
     });
 

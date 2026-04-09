@@ -56,11 +56,7 @@ describe("leaderboardService helpers", () => {
 
   test("findReferenceSnapshot returns closest around 24h", () => {
     const now = Date.UTC(2026, 2, 24, 12, 0, 0);
-    const snapshots = [
-      { ts: now - 6 * 60 * 60 * 1000 },
-      { ts: now - 24 * 60 * 60 * 1000 + 20 * 60 * 1000 },
-      { ts: now - 30 * 60 * 60 * 1000 }
-    ];
+    const snapshots = [{ ts: now - 6 * 60 * 60 * 1000 }, { ts: now - 24 * 60 * 60 * 1000 + 20 * 60 * 1000 }, { ts: now - 30 * 60 * 60 * 1000 }];
 
     const selected = findReferenceSnapshot(snapshots, now);
     expect(selected.ts).toBe(snapshots[1].ts);

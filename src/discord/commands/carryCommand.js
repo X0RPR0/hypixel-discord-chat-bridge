@@ -84,11 +84,7 @@ module.exports = {
       if (carryId) {
         carry = service.getCarryById(carryId);
       } else {
-        carry = service
-          .db
-          .getConnection()
-          .prepare("SELECT * FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 1")
-          .get(String(interaction.user.id));
+        carry = service.db.getConnection().prepare("SELECT * FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 1").get(String(interaction.user.id));
       }
 
       if (!carry) {
@@ -139,8 +135,7 @@ module.exports = {
     }
 
     if (sub === "mycarries") {
-      const rows = service
-        .db
+      const rows = service.db
         .getConnection()
         .prepare("SELECT id, carry_type, tier, amount, status, final_price, logged_runs FROM carries WHERE customer_discord_id = ? ORDER BY id DESC LIMIT 10")
         .all(String(interaction.user.id));
@@ -156,7 +151,8 @@ module.exports = {
               {
                 title: "Recent Requests",
                 lines: rows.map(
-                  (r) => `- #${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`
+                  (r) =>
+                    `- #${r.id} ${r.carry_type} ${r.tier} x${r.amount} | ${r.status} | runs ${Number(r.logged_runs || 0)}/${r.amount} | final ${coins(r.final_price)}`
                 )
               }
             ]
@@ -183,10 +179,7 @@ module.exports = {
               },
               {
                 title: "Notes",
-                lines: [
-                  "- In-game: `!carry request <type> <amount>` (linked Discord required).",
-                  "- Free carry exclusions: Kuudra and Dungeons M7."
-                ]
+                lines: ["- In-game: `!carry request <type> <amount>` (linked Discord required).", "- Free carry exclusions: Kuudra and Dungeons M7."]
               }
             ]
           })

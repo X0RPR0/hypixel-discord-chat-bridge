@@ -45,7 +45,11 @@ class HelpCommand extends minecraftCommand {
 
     const prefix = config.minecraft.bot.prefix;
     const names = [...commands.values()]
-      .map((cmd) => String(cmd.name || "").trim().toLowerCase())
+      .map((cmd) =>
+        String(cmd.name || "")
+          .trim()
+          .toLowerCase()
+      )
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
 
@@ -60,4 +64,3 @@ class HelpCommand extends minecraftCommand {
 }
 
 module.exports = HelpCommand;
-

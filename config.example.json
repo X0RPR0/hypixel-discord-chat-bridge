@@ -51,11 +51,7 @@
         "HOPPITY_HUNT": true
       },
       "customTime": {
-        "2": [
-          "BANK_INTEREST",
-          "DARK_AUCTION",
-          "JACOBS_CONTEST"
-        ]
+        "2": ["BANK_INTEREST", "DARK_AUCTION", "JACOBS_CONTEST"]
       }
     },
     "hypixelUpdates": {
@@ -78,35 +74,20 @@
       "debugMode": true,
       "debugChannel": "DEBUG_CHANNEL_ID",
       "debugChannelMessageMode": "text",
-      "allowedBots": [
-        "BOT_USER_ID"
-      ]
+      "allowedBots": ["BOT_USER_ID"]
     },
     "commands": {
       "checkPerms": true,
       "commandRole": "COMMAND_ROLE_ID",
-      "blacklistRoles": [
-        "BLACKLIST_ROLE_ID"
-      ],
-      "users": [
-        "486155512568741900"
-      ]
+      "blacklistRoles": ["BLACKLIST_ROLE_ID"],
+      "users": ["486155512568741900"]
     },
     "other": {
       "messageMode": "bot",
       "messageFormat": "{chatType} > {skin} {rank} {username} {guildRank}§f: {message}",
       "stripEmojisFromUsernames": true,
       "filterMessages": true,
-      "filterWords": [
-        "dox",
-        "doxx",
-        "doxed",
-        "doxxed",
-        "doxing",
-        "doxxing",
-        "doxes",
-        "doxxes"
-      ],
+      "filterWords": ["dox", "doxx", "doxed", "doxxed", "doxing", "doxxing", "doxes", "doxxes"],
       "joinMessage": true,
       "autoLimbo": false
     },
@@ -127,9 +108,7 @@
     "joinRequests": {
       "enabled": false,
       "forumChannelId": "FORUM_CHANNEL_ID",
-      "moderatorRoleIds": [
-        "JOIN_REQUEST_MOD_ROLE_ID"
-      ],
+      "moderatorRoleIds": ["JOIN_REQUEST_MOD_ROLE_ID"],
       "statusTagIds": {
         "pending": "",
         "accepted_discord": "",
@@ -145,16 +124,12 @@
       "requestEntryMessageId": ""
     },
     "tickets": {
-      "staffRoleIds": [
-        "SUPPORT_STAFF_ROLE_ID"
-      ],
+      "staffRoleIds": ["SUPPORT_STAFF_ROLE_ID"],
       "dashboardChannelId": "TICKET_DASHBOARD_CHANNEL_ID",
       "ticketLogsForumChannelId": "TICKET_LOGS_FORUM_CHANNEL_ID"
     },
     "carry": {
-      "carrierRoleIds": [
-        "CARRIER_ROLE_ID"
-      ],
+      "carrierRoleIds": ["CARRIER_ROLE_ID"],
       "dashboardChannelId": "CARRY_DASHBOARD_CHANNEL_ID",
       "carrierDashboardChannelId": "CARRIER_DASHBOARD_CHANNEL_ID",
       "categoryId": "CARRY_CATEGORY_ID"
@@ -214,14 +189,8 @@
         "guildRank": "Shadow"
       }
     ],
-    "allowedInvokerGuildRanks": [
-      "Guild Master",
-      "Slayer"
-    ],
-    "protectedGuildRanks": [
-      "Guild Master",
-      "Slayer"
-    ]
+    "allowedInvokerGuildRanks": ["Guild Master", "Slayer"],
+    "protectedGuildRanks": ["Guild Master", "Slayer"]
   },
   "other": {
     "autoUpdater": true,

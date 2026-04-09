@@ -24,4 +24,3 @@ describe("carryadmin command V2 responses", () => {
     expect(Number(payload.flags) & Number(MessageFlags.IsComponentsV2)).toBe(Number(MessageFlags.IsComponentsV2));
   });
 });
-

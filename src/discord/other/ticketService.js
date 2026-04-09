@@ -1,10 +1,4 @@
-const {
-  ActionRowBuilder,
-  ChannelType,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
-} = require("discord.js");
+const { ActionRowBuilder, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { actionButton, makePanel, panelPayload } = require("./componentsV2Panels.js");
 const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const config = require("../../../config.json");
@@ -211,7 +205,10 @@ class TicketService {
     const { items, page: currentPage, maxPage, total } = this.paginateRows(rows, page, 8);
     const list =
       items.length > 0
-        ? items.map((row) => `- #${row.id} **${row.type}** | <@${row.customer_discord_id || "0"}> | ${row.status} | <t:${Math.floor(Number(row.created_at || Date.now()) / 1000)}:R>`)
+        ? items.map(
+            (row) =>
+              `- #${row.id} **${row.type}** | <@${row.customer_discord_id || "0"}> | ${row.status} | <t:${Math.floor(Number(row.created_at || Date.now()) / 1000)}:R>`
+          )
         : ["No tickets in this view."];
 
     const sections = [
@@ -258,10 +255,7 @@ class TicketService {
     }
 
     if (expanded.includes("audit")) {
-      const recent = this.db
-        .getConnection()
-        .prepare("SELECT event_type, entity_id, created_at FROM events WHERE entity_type = 'ticket' ORDER BY id DESC LIMIT 5")
-        .all();
+      const recent = this.db.getConnection().prepare("SELECT event_type, entity_id, created_at FROM events WHERE entity_type = 'ticket' ORDER BY id DESC LIMIT 5").all();
       sections.push({
         title: "Audit Details",
         lines:
@@ -272,15 +266,14 @@ class TicketService {
     }
 
     if (expanded.includes("logs")) {
-      const recent = this.db
-        .getConnection()
-        .prepare("SELECT ticket_id, author_username, created_at FROM ticket_messages ORDER BY id DESC LIMIT 5")
-        .all();
+      const recent = this.db.getConnection().prepare("SELECT ticket_id, author_username, created_at FROM ticket_messages ORDER BY id DESC LIMIT 5").all();
       sections.push({
         title: "Logs Summary",
         lines:
           recent.length > 0
-            ? recent.map((entry) => `- #${entry.ticket_id} by **${entry.author_username || "unknown"}** at <t:${Math.floor(Number(entry.created_at || Date.now()) / 1000)}:R>`)
+            ? recent.map(
+                (entry) => `- #${entry.ticket_id} by **${entry.author_username || "unknown"}** at <t:${Math.floor(Number(entry.created_at || Date.now()) / 1000)}:R>`
+              )
             : ["No mirrored logs yet."]
       });
     }
@@ -310,8 +303,16 @@ class TicketService {
           expanded.includes("payment") ? "Hide Payment" : "Show Payment",
           2
         ),
-        actionButton(`${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("audit") ? "hide_audit" : "show_audit"}`, expanded.includes("audit") ? "Hide Audit" : "Show Audit", 2),
-        actionButton(`${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("logs") ? "hide_logs" : "show_logs"}`, expanded.includes("logs") ? "Hide Logs" : "Show Logs", 2)
+        actionButton(
+          `${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("audit") ? "hide_audit" : "show_audit"}`,
+          expanded.includes("audit") ? "Hide Audit" : "Show Audit",
+          2
+        ),
+        actionButton(
+          `${TICKET_PANEL_PREFIX}:toggle:dashboard:${expanded.includes("logs") ? "hide_logs" : "show_logs"}`,
+          expanded.includes("logs") ? "Hide Logs" : "Show Logs",
+          2
+        )
       ],
       accentColor: 0x3498db,
       footer: `Expanded: ${expanded.length ? expanded.join(", ") : "none"}`
@@ -534,10 +535,7 @@ class TicketService {
 
   getLatestCarryForTicket(ticketId) {
     if (!ticketId) return null;
-    return this.db
-      .getConnection()
-      .prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
-      .get(Number(ticketId));
+    return this.db.getConnection().prepare("SELECT * FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1").get(Number(ticketId));
   }
 
   buildCarryIndicatorState(carry) {
@@ -726,10 +724,7 @@ class TicketService {
         carryIdForActivity = Number(carry.id);
       }
     } else {
-      const carry = this.db
-        .getConnection()
-        .prepare("SELECT id FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1")
-        .get(Number(ticket.id));
+      const carry = this.db.getConnection().prepare("SELECT id FROM carries WHERE ticket_id = ? ORDER BY id DESC LIMIT 1").get(Number(ticket.id));
       if (carry?.id) carryIdForActivity = Number(carry.id);
     }
 
@@ -969,9 +964,7 @@ class TicketService {
     const db = this.db.getConnection();
     const details = [];
     const carries = db.prepare("SELECT id, execution_channel_id FROM carries WHERE ticket_id = ?").all(Number(ticketId));
-    const channelsToDelete = carries
-      .map((row) => String(row.execution_channel_id || ""))
-      .filter(Boolean);
+    const channelsToDelete = carries.map((row) => String(row.execution_channel_id || "")).filter(Boolean);
     const thread = ticket.forum_thread_id ? await this.client?.channels?.fetch(ticket.forum_thread_id).catch(() => null) : null;
 
     try {

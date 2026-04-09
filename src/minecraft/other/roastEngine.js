@@ -33,51 +33,19 @@ const DEFAULT_ROAST_CONFIG = {
   },
   responseStructure: {
     setup: {
-      default: [
-        "alright {username}, let us check this crime scene.",
-        "stat check time for {username}...",
-        "pulling up {username}'s profile for scientific bullying."
-      ],
-      combo: [
-        "this is a two-for-one special, {username}.",
-        "okay {username}, this combo is genuinely nasty.",
-        "bro stacked issues like enchantments, {username}."
-      ]
+      default: ["alright {username}, let us check this crime scene.", "stat check time for {username}...", "pulling up {username}'s profile for scientific bullying."],
+      combo: ["this is a two-for-one special, {username}.", "okay {username}, this combo is genuinely nasty.", "bro stacked issues like enchantments, {username}."]
     },
     closer: {
-      mild: [
-        "skill issue aint fixing itself, start grinding.",
-        "small fix, big improvement. get to work.",
-        "you are one detour away from being decent."
-      ],
-      high: [
-        "stop dodging progression and fix it.",
-        "this build is held together by cope.",
-        "respectfully, go grind the basics."
-      ],
-      extreme: [
-        "drop everything and repair your profile.",
-        "this is not a build, it is a warning sign.",
-        "full rebuild angle. now."
-      ],
-      noIssue: [
-        "annoyingly balanced. go outside.",
-        "no easy angle today. touch grass.",
-        "you win this round. unfortunately."
-      ],
-      newPlayer: [
-        "enjoy immunity while it lasts.",
-        "you are protected... for now.",
-        "rookie shield active. temporary." 
-      ]
+      mild: ["skill issue aint fixing itself, start grinding.", "small fix, big improvement. get to work.", "you are one detour away from being decent."],
+      high: ["stop dodging progression and fix it.", "this build is held together by cope.", "respectfully, go grind the basics."],
+      extreme: ["drop everything and repair your profile.", "this is not a build, it is a warning sign.", "full rebuild angle. now."],
+      noIssue: ["annoyingly balanced. go outside.", "no easy angle today. touch grass.", "you win this round. unfortunately."],
+      newPlayer: ["enjoy immunity while it lasts.", "you are protected... for now.", "rookie shield active. temporary."]
     }
   },
   selfIntroLines: ["you asked for this ??", "bro snitched on himself", "self report detected"],
-  noIssueReplies: [
-    "i tried finding a skill issue but this is annoyingly balanced.",
-    "no roast today... and i hate that for me.",
-    "this profile is suspiciously normal."
-  ],
+  noIssueReplies: ["i tried finding a skill issue but this is annoyingly balanced.", "no roast today... and i hate that for me.", "this profile is suspiciously normal."],
   newPlayerReplies: [
     "you are still early game, i will allow it... for now ??",
     "new player immunity activated. come back after some grind.",
@@ -88,11 +56,7 @@ const DEFAULT_ROAST_CONFIG = {
     "progression looking shaky, fix the basics first.",
     "this profile needs less ego and more consistency."
   ],
-  nukeLines: [
-    "{lineA}\n{lineB}\nwhy",
-    "{lineA}\n{lineB}\nexplain",
-    "{lineA}\n{lineB}\nthis cannot be real"
-  ],
+  nukeLines: ["{lineA}\n{lineB}\nwhy", "{lineA}\n{lineB}\nexplain", "{lineA}\n{lineB}\nthis cannot be real"],
   comboTemplates: {
     "rich_low_sa+one_trick_profile": {
       mild: ["{username} has money and one skill. progression forgot to load."],

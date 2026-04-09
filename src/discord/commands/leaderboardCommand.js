@@ -34,7 +34,11 @@ module.exports = {
       throw new HypixelDiscordChatBridgeError("Invalid metric value.");
     }
 
-    const { embed, metric, top: safeTop } = await leaderboardService.buildLeaderboard({
+    const {
+      embed,
+      metric,
+      top: safeTop
+    } = await leaderboardService.buildLeaderboard({
       metric: selectedMetric,
       top,
       persistSnapshot: setup
