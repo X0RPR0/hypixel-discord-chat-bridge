@@ -1,7 +1,7 @@
 const { ActionRowBuilder, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { actionButton, makePanel, panelPayload } = require("./componentsV2Panels.js");
 const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const TICKET_CREATE_PREFIX = "ticket:create:";
 const TICKET_ACTION_PREFIX = "ticket:action:";

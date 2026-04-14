@@ -5,7 +5,7 @@ const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_VERIFY_BUTTON_ID, PANEL_MODAL
 const giveawayService = require("../other/giveawayService.js");
 // eslint-disable-next-line no-unused-vars
 const { CommandInteraction, Events } = require("discord.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 module.exports = {
   name: Events.InteractionCreate,

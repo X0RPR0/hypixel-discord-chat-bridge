@@ -15,7 +15,7 @@ const { getDiscordIdByUuid } = require("../../contracts/linkedStore.js");
 const DiscountEngine = require("./discountEngine.js");
 const EtaEngine = require("./etaEngine.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const CARRY_PREFIX = "carry:";
 const CARRY_MODAL_PREFIX = "carrymodal:";

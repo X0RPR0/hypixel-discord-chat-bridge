@@ -1,5 +1,5 @@
 const leaderboardService = require("./leaderboardService.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 const cron = require("node-cron");
 
 const interval = Math.max(1, Number(config?.discord?.leaderboard?.autoUpdateMinutes) || 15);

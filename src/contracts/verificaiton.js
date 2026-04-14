@@ -1,5 +1,5 @@
 const { getUuidByDiscordId } = require("./linkedStore.js");
-const config = require("../../config.json");
+const config = require('../config');
 
 function isGuildMember(interaction) {
   const user = interaction.member;

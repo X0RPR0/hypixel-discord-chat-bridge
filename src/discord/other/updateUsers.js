@@ -1,5 +1,5 @@
 const updateRolesCommand = require("../commands/forceUpdateCommand.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 const cron = require("node-cron");
 
 if (config.verification.autoRoleUpdater.enabled) {

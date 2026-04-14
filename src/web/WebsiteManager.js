@@ -1,4 +1,4 @@
-const config = require("../../config.json");
+const config = require('../config');
 const WebSocket = require("ws");
 const http = require("http");
 

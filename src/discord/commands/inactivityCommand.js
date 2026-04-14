@@ -3,7 +3,7 @@ const { Embed, SuccessEmbed } = require("../../contracts/embedHandler.js");
 const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const { getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { writeFileSync, readFileSync } = require("fs");
-const config = require("../../../config.json");
+const config = require('../../config');
 const ms = require("ms");
 const { SlashCommandBuilder } = require("discord.js");
 

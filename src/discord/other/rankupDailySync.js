@@ -1,5 +1,5 @@
 const cron = require("node-cron");
-const config = require("../../../config.json");
+const config = require('../../config');
 const { getRankupConfig, getBotGuildSnapshot, rankupAll } = require("../../contracts/rankupService.js");
 
 const rankupConfig = getRankupConfig();

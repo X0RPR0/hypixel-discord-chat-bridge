@@ -3,7 +3,7 @@ const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
 const ms = require("ms");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const STATE_PATH = "data/giveaways.json";
 const GUILD_CACHE_TTL_MS = 60 * 1000;

@@ -8,18 +8,29 @@ module.exports = {
 
   execute: async (interaction) => {
     const restartEmbed = new Embed().setTitle("Restarting...").setDescription("The bot is restarting. This might take few seconds.");
+    await interaction.followUp({ embeds: [restartEmbed] });
 
-    interaction.followUp({ embeds: [restartEmbed] });
+    try {
+      if (app?.minecraft?.bot) {
+        await app.minecraft.bot.end("restart");
+      } else if (global.bot) {
+        await global.bot.end("restart");
+      }
+    } catch (error) {
+      console.error("Failed to close Minecraft bot during restart:", error);
+    }
 
-    await bot.end("restart");
-    await client.destroy();
+    try {
+      if (app?.discord?.client) {
+        await app.discord.client.destroy();
+      } else if (global.client) {
+        await global.client.destroy();
+      }
+    } catch (error) {
+      console.error("Failed to close Discord client during restart:", error);
+    }
 
-    app.register().then(() => {
-      app.connect();
-    });
-
-    const successfulRestartEmbed = new Embed().setTitle("Success").setDescription("The bot has been restarted successfully.");
-
-    interaction.followUp({ embeds: [successfulRestartEmbed] });
+    // In container/managed runtime we should terminate the process so orchestration can restart cleanly.
+    setTimeout(() => process.exit(0), 200);
   }
 };

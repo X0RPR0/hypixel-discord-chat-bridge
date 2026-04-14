@@ -3,7 +3,7 @@ const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js")
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const { getUUID } = require("../../contracts/API/mowojangAPI.js");
 const { Embed } = require("../../contracts/embedHandler.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 const { SlashCommandBuilder } = require("discord.js");
 
 async function checkRequirements(uuid) {

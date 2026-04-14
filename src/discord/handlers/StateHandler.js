@@ -1,4 +1,4 @@
-const config = require("../../../config.json");
+const config = require('../../config');
 const giveawayService = require("../other/giveawayService.js");
 const { startWeeklyFreeCarryReset, stopWeeklyFreeCarryReset } = require("../other/freecarryWeeklyReset.js");
 

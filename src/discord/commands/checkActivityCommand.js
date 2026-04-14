@@ -6,7 +6,7 @@ const { getAllLinks } = require("../../contracts/linkedStore.js");
 const { Embed } = require("../../contracts/embedHandler.js");
 const activityTracker = require("../other/activityTracker.js");
 const { readFileSync } = require("fs");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTOCOMPLETE_CACHE_MS = 10 * 60 * 1000;

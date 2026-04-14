@@ -13,7 +13,7 @@ const { getPersonalBest } = require("../../../API/stats/dungeonsPersonalBest.js"
 const { getSlayer } = require("../../../API/stats/slayer.js");
 const { ProfileNetworthCalculator } = require("skyhelper-networth");
 const { formatNumber } = require("../../contracts/helperFunctions.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
 const GUILD_MEMBER_HISTORY_PATH = "data/guildMemberHistory.json";

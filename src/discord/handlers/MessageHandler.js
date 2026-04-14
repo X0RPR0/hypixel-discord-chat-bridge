@@ -1,4 +1,4 @@
-const config = require("../../../config.json");
+const config = require('../../config');
 const { unemojify } = require("node-emoji");
 const { getAllLinks, getUuidByDiscordId } = require("../../contracts/linkedStore.js");
 const activityTracker = require("../other/activityTracker.js");

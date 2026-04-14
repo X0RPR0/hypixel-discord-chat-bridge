@@ -13,7 +13,7 @@ const { getSlayer } = require("../../../API/stats/slayer.js");
 const { getSkills } = require("../../../API/stats/skills.js");
 const { getJacob } = require("../../../API/stats/jacob.js");
 const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 const { getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 

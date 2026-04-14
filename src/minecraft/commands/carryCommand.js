@@ -1,4 +1,4 @@
-const config = require("../../../config.json");
+const config = require('../../config');
 const minecraftCommand = require("../../contracts/minecraftCommand.js");
 
 class CarryCommand extends minecraftCommand {

@@ -10,7 +10,7 @@ const { carryDatabase } = require("./other/carryDatabase.js");
 const { TicketService } = require("./other/ticketService.js");
 const { CarryService } = require("./other/carryService.js");
 const { CarrySetupService } = require("./other/carrySetupService.js");
-const config = require("../../config.json");
+const config = require('../config');
 const fs = require("fs");
 const { ErrorEmbed } = require("../contracts/embedHandler.js");
 

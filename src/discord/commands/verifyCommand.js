@@ -4,7 +4,7 @@ const hypixelRebornAPI = require("../../contracts/API/HypixelRebornAPI.js");
 const { formatError } = require("../../contracts/helperFunctions.js");
 const { upsertLink } = require("../../contracts/linkedStore.js");
 const updateRolesCommand = require("./updateCommand.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 
 async function verifyWithUsername(interaction, username, extra = {}) {

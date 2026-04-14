@@ -1,5 +1,5 @@
 const minecraftCommand = require("../../contracts/minecraftCommand.js");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 class HelpCommand extends minecraftCommand {
   /** @param {import("minecraft-protocol").Client} minecraft */

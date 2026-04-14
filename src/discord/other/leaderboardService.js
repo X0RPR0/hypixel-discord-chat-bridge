@@ -2,7 +2,7 @@ const { Embed } = require("../../contracts/embedHandler.js");
 const hypixel = require("../../contracts/API/HypixelRebornAPI.js");
 const activityTracker = require("./activityTracker.js");
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
-const config = require("../../../config.json");
+const config = require('../../config');
 
 const STATE_PATH = "data/leaderboard.json";
 const DAY_MS = 24 * 60 * 60 * 1000;

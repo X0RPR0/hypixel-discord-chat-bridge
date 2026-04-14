@@ -4,7 +4,7 @@ const hypixel = require("./API/HypixelRebornAPI.js");
 const { getLatestProfile } = require("../../API/functions/getLatestProfile.js");
 const { delay } = require("./helperFunctions.js");
 const { getAllLinks, getDiscordIdByUuid, getUuidByDiscordId } = require("./linkedStore.js");
-const config = require("../../config.json");
+const config = require('../config');
 
 function getRankupConfig() {
   const defaults = {
