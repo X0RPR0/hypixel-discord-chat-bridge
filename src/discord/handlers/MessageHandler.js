@@ -52,14 +52,17 @@ class MessageHandler {
         return;
       }
 
-      const isGuildBridgeChannel = message.channel.id === String(config.discord.channels.guildChatChannel || "");
+      const guildChatChannelId = String(config.discord.channels.guildChatChannel || "");
+      const officerChannelId = String(config.discord.channels.officerChannel || "");
+      const isGuildBridgeChannel = message.channel.id === guildChatChannelId;
+      const isBridgeChatChannel = message.channel.id === guildChatChannelId || message.channel.id === officerChannelId;
       if (isGuildBridgeChannel && !this.isLinkedBridgeUser(message.author.id)) {
         await message.react("\u274C").catch(() => {});
         await this.sendTemporaryNotice(message, "Only linked users can use chat bridge. Use `/verify`.");
         return;
       }
 
-      if (isGuildBridgeChannel && this.isGuildMutedFromBridge(message.author.id)) {
+      if (isBridgeChatChannel && this.isGuildMutedFromBridge(message.author.id)) {
         await message.react("\u{1F507}").catch(() => {});
         await this.sendTemporaryNotice(message, "You are currently muted in guild chat and cannot use the bridge.");
         return;
