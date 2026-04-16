@@ -1106,9 +1106,35 @@ class JoinRequestManager {
     }
 
     const payload = await this.buildRequestMessagePayload(request);
-    await message.edit(payload);
-    await this.syncStatusReaction(request, message);
+    let activeMessage = message;
+    try {
+      await message.edit(payload);
+    } catch (error) {
+      // Legacy request messages (content/embed based) cannot always be edited into Components V2.
+      // Recreate the message in-place and move tracking to the new starter-like message.
+      if (this.isComponentsV2LegacyContentError(error)) {
+        const recreated = await thread.send(payload).catch(() => null);
+        if (recreated) {
+          activeMessage = recreated;
+          request.messageId = recreated.id;
+          this.saveState();
+          await message.delete().catch(() => {});
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+    await this.syncStatusReaction(request, activeMessage);
     await this.syncThreadStatusTag(request, thread);
+  }
+
+  isComponentsV2LegacyContentError(error) {
+    if (!error) return false;
+    const code = Number(error.code || error?.rawError?.code || 0);
+    const text = String(error?.message || error?.rawError?.message || "");
+    return code === 50035 && (text.includes("MESSAGE_CANNOT_USE_LEGACY_FIELDS_WITH_COMPONENTS_V2") || text.includes("content"));
   }
 
   async reconcileExpiredRequests() {

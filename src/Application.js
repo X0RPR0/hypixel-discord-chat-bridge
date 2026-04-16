@@ -2,6 +2,7 @@ const MinecraftManager = require("./minecraft/MinecraftManager.js");
 const { existsSync, mkdirSync, writeFileSync } = require("fs");
 const DiscordManager = require("./discord/DiscordManager.js");
 const webManager = require("./web/WebsiteManager.js");
+const { carryDatabase } = require("./discord/other/carryDatabase.js");
 
 class Application {
   constructor() {
@@ -45,6 +46,7 @@ class Application {
   }
 
   async register() {
+    await carryDatabase.initialize();
     this.discord = new DiscordManager(this);
     this.minecraft = new MinecraftManager(this);
     this.web = new webManager(this);
