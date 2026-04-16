@@ -231,7 +231,7 @@ describe("ChatHandler", () => {
       expect(details).toEqual({
         username: "DuckySoSkilled",
         kickedBy: "StaffMember",
-        reason: null
+        reason: "Not provided by Hypixel"
       });
     });
   });

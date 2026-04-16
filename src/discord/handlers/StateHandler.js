@@ -26,6 +26,7 @@ class StateHandler {
     if (config.rankup?.enabled && config.rankup?.dailySync?.enabled) require("../other/rankupDailySync.js");
     if (config.statsChannels.enabled) require("../other/statsChannels.js");
     require("../other/leaderboardUpdater.js");
+    this.discord.manualLinkRequestService.initialize();
     await this.discord.joinRequestManager.initialize();
     await this.discord.carryService.db.initialize();
     this.discord.ticketService.initialize(this.discord.client);

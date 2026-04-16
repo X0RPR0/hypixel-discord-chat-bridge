@@ -7,6 +7,20 @@ const updateRolesCommand = require("./updateCommand.js");
 const config = require('../../config');
 const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 
+function isLikelyHypixelApiIssue(errorMessage) {
+  const message = String(errorMessage || "").toLowerCase();
+  if (!message) return false;
+  return (
+    message.includes("request to hypixel api failed") ||
+    message.includes("invalid api key") ||
+    message.includes("api key") ||
+    message.includes("forbidden") ||
+    message.includes("status code 403") ||
+    message.includes("key is invalid") ||
+    message.includes("missing api")
+  );
+}
+
 async function verifyWithUsername(interaction, username, extra = {}) {
   const linkedRole = guild.roles.cache.get(config.verification.roles.verified.roleId);
   if (!linkedRole) {
@@ -54,6 +68,26 @@ async function runVerification(interaction, username, extra = {}) {
     });
 
     await interaction.editReply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral });
+    if (isLikelyHypixelApiIssue(error)) {
+      const manualRequest = await interaction.client.manualLinkRequestService
+        .createReviewRequest({
+          requesterDiscordId: interaction.user.id,
+          requesterTag: interaction.user.tag,
+          claimedUsername: username,
+          reason: "Hypixel API unavailable during /verify"
+        })
+        .catch(() => null);
+
+      const followUpText = manualRequest
+        ? `Hypixel API verification is unavailable. Staff review request created: \`${manualRequest.requestId}\`.`
+        : "Hypixel API verification is unavailable and I could not create a staff review request.";
+      await interaction.followUp({
+        content: followUpText,
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
     if (error.includes("Please follow the instructions below.")) {
       const verificationTutorialEmbed = new Embed()
         .setAuthor({ name: "Link with Hypixel Social Media" })

@@ -12,6 +12,7 @@ class MessageHandler {
     this.command = command;
     this.linkedCache = null;
     this.linkedCacheExpiresAt = 0;
+    this.noticeCooldown = new Map();
   }
 
   async onMessage(message) {
@@ -51,8 +52,16 @@ class MessageHandler {
         return;
       }
 
-      if (this.isGuildMutedFromBridge(message.author.id)) {
-        await message.react("🔇").catch(() => {});
+      const isGuildBridgeChannel = message.channel.id === String(config.discord.channels.guildChatChannel || "");
+      if (isGuildBridgeChannel && !this.isLinkedBridgeUser(message.author.id)) {
+        await message.react("\u274C").catch(() => {});
+        await this.sendTemporaryNotice(message, "Only linked users can use chat bridge. Use `/verify`.");
+        return;
+      }
+
+      if (isGuildBridgeChannel && this.isGuildMutedFromBridge(message.author.id)) {
+        await message.react("\u{1F507}").catch(() => {});
+        await this.sendTemporaryNotice(message, "You are currently muted in guild chat and cannot use the bridge.");
         return;
       }
 
@@ -236,6 +245,34 @@ class MessageHandler {
     if (!uuid) return false;
     return this.getGuildMutedUsersSet().has(uuid);
   }
+
+  isLinkedBridgeUser(discordId) {
+    return Boolean(getUuidByDiscordId(discordId));
+  }
+
+  async sendTemporaryNotice(message, content) {
+    try {
+      const key = `${message.channel.id}:${message.author.id}`;
+      const now = Date.now();
+      const nextAllowed = this.noticeCooldown.get(key) || 0;
+      if (now < nextAllowed) {
+        return;
+      }
+
+      this.noticeCooldown.set(key, now + 10000);
+      const sent = await message.reply({
+        content: `<@${message.author.id}> ${content}`,
+        allowedMentions: { users: [message.author.id], roles: [], repliedUser: false }
+      });
+
+      setTimeout(() => {
+        sent.delete().catch(() => {});
+      }, 8000);
+    } catch {
+      // ignore temporary notice failures
+    }
+  }
 }
 
 module.exports = MessageHandler;
+

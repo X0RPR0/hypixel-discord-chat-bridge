@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
 const { existsSync, readFileSync, writeFileSync } = require("fs");
 const { getUUID, getUsername } = require("../../contracts/API/mowojangAPI.js");
 const { getUuidByDiscordId } = require("../../contracts/linkedStore.js");
@@ -13,6 +13,7 @@ const { getPersonalBest } = require("../../../API/stats/dungeonsPersonalBest.js"
 const { getSlayer } = require("../../../API/stats/slayer.js");
 const { ProfileNetworthCalculator } = require("skyhelper-networth");
 const { formatNumber } = require("../../contracts/helperFunctions.js");
+const { actionButton, makePanel, panelPayload } = require("./componentsV2Panels.js");
 const config = require('../../config');
 
 const JOIN_REQUEST_DATA_PATH = "data/joinRequests.json";
@@ -35,6 +36,22 @@ class JoinRequestManager {
 
   isEnabled() {
     return Boolean(config.discord.joinRequests?.enabled);
+  }
+
+  isLikelyHypixelApiIssue(error) {
+    const text = String(error || "").toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes("request to hypixel api failed") ||
+      text.includes("invalid api key") ||
+      text.includes("api key") ||
+      text.includes("status code 403") ||
+      text.includes("forbidden")
+    );
+  }
+
+  buildApiWarningText(source) {
+    return `Stats unavailable (${source}): Hypixel API key missing, invalid, or outdated.`;
   }
 
   ensureDataFile() {
@@ -201,6 +218,130 @@ class JoinRequestManager {
     return rows;
   }
 
+  buildModeratorActionButtons(request) {
+    const isTerminal = this.isTerminalStatus(request?.status);
+    const isExpired = request?.status === "expired";
+    const reinviteDisabled = isTerminal || !isExpired;
+    const acceptDisabled = isTerminal || isExpired;
+    const denyDisabled = isTerminal;
+
+    return [
+      actionButton(`joinreq:reinvite:${request.requestId}`, "Reinvite", ButtonStyle.Primary, { disabled: reinviteDisabled }),
+      actionButton(`joinreq:accept:${request.requestId}`, "Accept", ButtonStyle.Success, { disabled: acceptDisabled }),
+      actionButton(`joinreq:deny:${request.requestId}`, "Deny", ButtonStyle.Danger, { disabled: denyDisabled })
+    ];
+  }
+
+  buildRequestPanel(request, context = {}) {
+    const status = this.getStatusLabel(request.status);
+    const sections = [
+      {
+        title: "Request",
+        lines: [
+          `Guild join request for **${request.username}**`,
+          `Source: ${request.source === "discord_button" ? "Discord Button" : "In-game"}`,
+          `Accept timeout: <t:${this.toTimestamp(request.expiresAt)}:R> (<t:${this.toTimestamp(request.expiresAt)}:f>)`,
+          `Reinvites: ${Number(request.reinviteCount || 0)}`
+        ]
+      }
+    ];
+
+    if (Array.isArray(context.warnings) && context.warnings.length > 0) {
+      sections.push({
+        title: "Warnings",
+        lines: context.warnings.map((warning) => `- ${warning}`)
+      });
+    }
+
+    if (request.note) {
+      sections.push({
+        title: "Applicant Note",
+        lines: [request.note.slice(0, 1024)]
+      });
+    }
+
+    if (context.guildHistoryLines?.length) {
+      sections.push({
+        title: "Guild History",
+        lines: context.guildHistoryLines
+      });
+    }
+
+    const reqData = request.requirementsSnapshot;
+    if (reqData) {
+      sections.push({
+        title: "Requirements Snapshot",
+        lines: [
+          `Bedwars: Stars ${reqData.bwLevel} | FKDR ${reqData.bwFKDR}`,
+          `Skywars: Stars ${reqData.swLevel} | KDR ${reqData.swKDR}`,
+          `Duels: Wins ${reqData.duelsWins} | WLR ${reqData.dWLR}`,
+          `SkyBlock Level: ${reqData.skyblockLevel}`
+        ]
+      });
+    }
+
+    const snapshot = request.skyblockSnapshot;
+    if (snapshot) {
+      sections.push(
+        {
+          title: "SkyBlock",
+          lines: [`Level: ${formatNumber(snapshot.skyblockLevel)} | Skill Avg: ${snapshot.skillAverage ?? "N/A"}`]
+        },
+        {
+          title: "Economy",
+          lines: [`Networth: ${formatNumber(snapshot.networth || 0)} | Purse: ${formatNumber(snapshot.purse || 0)} | Bank: ${formatNumber(snapshot.bank || 0)}`]
+        },
+        {
+          title: "Dungeons / Slayer",
+          lines: [
+            `Cata: ${formatNumber(snapshot.cata || 0)} | Class Avg: ${formatNumber(snapshot.classAverage || 0)}`,
+            snapshot.slayerSummary || "N/A"
+          ]
+        },
+        {
+          title: "Progression",
+          lines: [`MP: ${formatNumber(snapshot.magicalPower || 0)} | Highest: F${snapshot.highestNormalFloor ?? "?"} / M${snapshot.highestMasterFloor ?? "?"}`]
+        },
+        {
+          title: "Dungeon PB",
+          lines: [`F7: ${this.formatDungeonTime(snapshot.f7BestTime)} | M7: ${this.formatDungeonTime(snapshot.m7BestTime)}`]
+        }
+      );
+    }
+
+    const lastAcceptedDiscord = [...request.actions].reverse().find((action) => action.action === "accepted_discord");
+    const lastAcceptedIngame = [...request.actions].reverse().find((action) => action.action === "accepted_ingame");
+    const lastDenied = [...request.actions].reverse().find((action) => action.action === "denied");
+    if (lastAcceptedDiscord || lastAcceptedIngame || lastDenied) {
+      const lines = [];
+      if (lastAcceptedDiscord) {
+        lines.push(`Accepted via Discord by <@${lastAcceptedDiscord.actorDiscordId}> at <t:${this.toTimestamp(lastAcceptedDiscord.timestamp)}:f>`);
+      }
+      if (lastAcceptedIngame) {
+        lines.push(`Accepted in-game at <t:${this.toTimestamp(lastAcceptedIngame.timestamp)}:f>`);
+      }
+      if (lastDenied) {
+        lines.push(`Denied by <@${lastDenied.actorDiscordId}> at <t:${this.toTimestamp(lastDenied.timestamp)}:f>`);
+      }
+      sections.push({ title: "Outcome", lines });
+    }
+
+    const actions = this.buildModeratorActionButtons(request);
+    const skycryptLink = String(request?.skycryptLink || "").trim() || this.buildSkyCryptLink(request);
+    if (skycryptLink && config.discord.joinRequests?.showSkyCryptButton !== false) {
+      actions.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Open SkyCrypt").setURL(skycryptLink));
+    }
+
+    return makePanel({
+      title: `${request.username} Join Request`,
+      status,
+      sections,
+      actions,
+      accentColor: request.status === "denied" ? 15548997 : 3447003,
+      footer: `Request ID: ${request.requestId}`
+    });
+  }
+
   isTerminalStatus(status) {
     return ["denied", "accepted_ingame"].includes(status);
   }
@@ -213,12 +354,12 @@ class JoinRequestManager {
     switch (status) {
       case "pending":
       case "expired":
-        return "⚠️";
+        return "\u26A0\uFE0F";
       case "denied":
-        return "❌";
+        return "\u274C";
       case "accepted_discord":
       case "accepted_ingame":
-        return "✅";
+        return "\u2705";
       default:
         return null;
     }
@@ -230,7 +371,7 @@ class JoinRequestManager {
     }
 
     const botUserId = this.discord.client.user.id;
-    const managedEmojis = ["⚠️", "❌", "✅"];
+    const managedEmojis = ["\u26A0\uFE0F", "\u274C", "\u2705"];
     const desiredEmoji = this.getStatusReactionEmoji(request?.status);
 
     for (const emoji of managedEmojis) {
@@ -252,8 +393,9 @@ class JoinRequestManager {
   }
 
   canModerate(member) {
-    const roles = config.discord.joinRequests?.moderatorRoleIds ?? [];
-    if (!Array.isArray(roles) || roles.length === 0) {
+    const rawRoles = config.discord.joinRequests?.moderatorRoleIds ?? [];
+    const roles = Array.isArray(rawRoles) ? rawRoles : Object.values(rawRoles || {}).filter((value) => typeof value === "string");
+    if (!roles.length) {
       return false;
     }
 
@@ -331,13 +473,16 @@ class JoinRequestManager {
         return null;
       }
 
-      if (parsed.version === 1 && parsed.members && typeof parsed.members === "object") {
-        return parsed.members;
+      if ((parsed.version === 1 || parsed.version === 2) && parsed.members && typeof parsed.members === "object") {
+        return parsed;
       }
 
-      return parsed;
-    } catch {
-      return null;
+      return {
+        version: 1,
+        members: parsed
+      };
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -351,8 +496,8 @@ class JoinRequestManager {
   }
 
   async getGuildHistoryForRequest(request) {
-    const members = this.loadGuildMemberHistory();
-    if (!members) {
+    const historyState = this.loadGuildMemberHistory();
+    if (!historyState) {
       return null;
     }
 
@@ -365,8 +510,31 @@ class JoinRequestManager {
       return null;
     }
 
-    const history = members[this.normalizeUuid(uuid)];
-    if (!history?.departure) {
+    const history = historyState.members?.[this.normalizeUuid(uuid)];
+    if (!history) {
+      return null;
+    }
+
+    const kickEvents = Array.isArray(history.history?.kicks)
+      ? history.history.kicks
+      : history.departure?.type === "kicked"
+        ? [history.departure]
+        : [];
+    const latestLeft = history.history?.latestLeft || (history.departure?.type === "left" ? history.departure : null);
+    const lastKick = kickEvents.length ? kickEvents[kickEvents.length - 1] : null;
+
+    const latestDeparture =
+      latestLeft && lastKick
+        ? new Date(latestLeft.date).getTime() >= new Date(lastKick.date).getTime()
+          ? { ...latestLeft, type: "left" }
+          : { ...lastKick, type: "kicked" }
+        : latestLeft
+          ? { ...latestLeft, type: "left" }
+          : lastKick
+            ? { ...lastKick, type: "kicked" }
+            : history.departure || null;
+
+    if (!latestDeparture) {
       return null;
     }
 
@@ -375,7 +543,11 @@ class JoinRequestManager {
 
     return {
       oldUsername,
-      departure: history.departure
+      departure: latestDeparture,
+      latestDeparture,
+      lastKick,
+      kickCount: kickEvents.length,
+      latestLeft
     };
   }
 
@@ -559,15 +731,15 @@ class JoinRequestManager {
   getStatusLabel(status) {
     switch (status) {
       case "pending":
-        return "🟡 Pending";
+        return "Pending";
       case "accepted_discord":
-        return "🟢 Accepted via Discord";
+        return "Accepted via Discord";
       case "accepted_ingame":
-        return "✅ Accepted In-game";
+        return "Accepted In-game";
       case "denied":
-        return "❌ Denied";
+        return "Denied";
       case "expired":
-        return "⚠️ Expired";
+        return "Expired";
       default:
         return "Unknown";
     }
@@ -757,6 +929,52 @@ class JoinRequestManager {
     return baseEmbed;
   }
 
+  async buildRequestMessagePayload(request, { mentionText = "" } = {}) {
+    const guildHistory = await this.getGuildHistoryForRequest(request);
+    const warnings = [...new Set([...(request.warnings || [])])];
+    const guildHistoryLines = [];
+
+    if (guildHistory?.latestDeparture) {
+      const departure = guildHistory.latestDeparture;
+      const departureTs = this.getHistoryTimestamp(departure.date);
+      const departureLabel = departure.type === "kicked" ? "Kicked" : "Left";
+      guildHistoryLines.push("Previously in guild: Yes");
+      if (guildHistory.oldUsername) {
+        guildHistoryLines.push(`Last known old username: ${guildHistory.oldUsername}`);
+      }
+      guildHistoryLines.push(`Latest departure: ${departureLabel}`);
+      if (departureTs) {
+        guildHistoryLines.push(`Date: <t:${departureTs}:f>`);
+      }
+
+      if (departure.type === "kicked") {
+        const kickReason = departure.reason || "Not provided by Hypixel";
+        guildHistoryLines.push(`Kicked by: ${departure.kickedBy || "Unknown"}`);
+        guildHistoryLines.push(`Reason: ${kickReason}`);
+        warnings.push(`Strong warning: player was kicked previously (${kickReason}).`);
+      }
+
+      if (departure.type === "left" && Number(guildHistory.kickCount || 0) > 0) {
+        const lastKickTs = this.getHistoryTimestamp(guildHistory.lastKick?.date);
+        warnings.push(
+          `Player was kicked before, then rejoined and left again${lastKickTs ? ` (last kick: <t:${lastKickTs}:R>)` : ""}.`
+        );
+        guildHistoryLines.push(`Prior kick events: ${guildHistory.kickCount}`);
+      }
+    }
+
+    const panel = this.buildRequestPanel(request, {
+      warnings,
+      guildHistoryLines
+    });
+
+    return {
+      content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
+      ...panelPayload(panel),
+      flags: MessageFlags.IsComponentsV2
+    };
+  }
+
   makeRequestId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -826,26 +1044,34 @@ class JoinRequestManager {
       ]
     };
 
+    request.warnings = Array.isArray(request.warnings) ? request.warnings : [];
     try {
       request.requirementsSnapshot = await checkRequirements(uuid);
-    } catch {
+    } catch (error) {
       request.requirementsSnapshot = null;
+      if (this.isLikelyHypixelApiIssue(error)) {
+        request.warnings.push(this.buildApiWarningText("requirements"));
+      }
     }
-    request.skyblockSnapshot = await this.fetchSkyblockSnapshot(uuid || username);
 
-    const embed = await this.buildRequestEmbed(request);
+    try {
+      request.skyblockSnapshot = await this.fetchSkyblockSnapshot(uuid || username);
+    } catch (error) {
+      request.skyblockSnapshot = null;
+      if (this.isLikelyHypixelApiIssue(error)) {
+        request.warnings.push(this.buildApiWarningText("skyblock"));
+      }
+    }
+
     const mentionText = config.discord.joinRequests?.mentionOnCreate || "";
     const skycryptLink = await this.resolveSkyCryptLink(request);
     request.skycryptLink = skycryptLink;
+    const payload = await this.buildRequestMessagePayload(request, { mentionText });
     const initialStatusTagId = this.resolveStatusTagId(request.status, forum);
     const thread = await forum.threads.create({
       name: `${request.username}_Join_Request`,
       appliedTags: initialStatusTagId ? [initialStatusTagId] : [],
-      message: {
-        content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
-        embeds: [embed],
-        components: this.buildRequestComponents(request)
-      }
+      message: payload
     });
 
     const starterMessage = await thread.fetchStarterMessage().catch(() => null);
@@ -876,11 +1102,8 @@ class JoinRequestManager {
       return;
     }
 
-    const embed = await this.buildRequestEmbed(request);
-    await message.edit({
-      embeds: [embed],
-      components: this.buildRequestComponents(request)
-    });
+    const payload = await this.buildRequestMessagePayload(request);
+    await message.edit(payload);
     await this.syncStatusReaction(request, message);
     await this.syncThreadStatusTag(request, thread);
   }
@@ -952,7 +1175,7 @@ class JoinRequestManager {
     }
 
     const target = this.state.requests
-      .filter((request) => request.username.toLowerCase() === username.toLowerCase() && ["pending", "expired"].includes(request.status))
+      .filter((request) => request.username.toLowerCase() === username.toLowerCase() && ["pending", "expired", "accepted_discord"].includes(request.status))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
     if (!target) {
@@ -1206,3 +1429,5 @@ module.exports = {
   PANEL_MODAL_ID,
   PANEL_VERIFY_MODAL_ID
 };
+
+

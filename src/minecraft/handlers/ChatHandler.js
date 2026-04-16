@@ -22,6 +22,7 @@ class StateHandler extends eventHandler {
     this.minecraft = minecraft;
     this.discord = discord;
     this.command = command;
+    this.relayedDiscordMessages = new Map();
     this.uuidCache = new Map();
     this.uuidCacheTtlMs = 60 * 60 * 1000;
     this.guildMemberHistoryPath = "data/guildMemberHistory.json";
@@ -184,7 +185,8 @@ class StateHandler extends eventHandler {
         const detailLines = [
           `\nPrevious departure: ${departureLabel} on ${departureTimestamp || `\`${this.formatHistoryDate(departure.date)}\``}`,
           departure.type === "kicked" ? `\nKicked by: \`${departure.kickedBy || "Unknown"}\`` : "",
-          departure.type === "kicked" ? `\nKick reason: \`${departure.reason || "Unknown"}\`` : ""
+          departure.type === "kicked" ? `\nKick reason: \`${departure.reason || "Not provided by Hypixel"}\`` : "",
+          departure.type === "left" && Number(rejoinContext.kickCount || 0) > 0 ? `\nPrior kicks recorded: \`${rejoinContext.kickCount}\`` : ""
         ].join("");
         joinedMessage = `${joinedMessage}\n\nPreviously in guild: yes${oldUsernameLine}${detailLines}`;
       }
@@ -666,6 +668,10 @@ class StateHandler extends eventHandler {
       return;
     }
 
+    if (this.isKnownRelayedDiscordMessage(match.groups.message)) {
+      return;
+    }
+
     if (this.isDiscordMessage(match.groups.message) === false) {
       const { chatType, rank, username, guildRank = "[Member]", message } = match.groups;
       if (message.includes("replying to") && username === this.bot.username) {
@@ -729,6 +735,30 @@ class StateHandler extends eventHandler {
     }
 
     return isDiscordMessage.test(message);
+  }
+
+  normalizeRelayedMessage(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  rememberRelayedDiscordMessage(value) {
+    const normalized = this.normalizeRelayedMessage(value);
+    if (!normalized) return;
+    this.relayedDiscordMessages.set(normalized, Date.now() + 15000);
+  }
+
+  isKnownRelayedDiscordMessage(value) {
+    const now = Date.now();
+    for (const [text, expiresAt] of this.relayedDiscordMessages.entries()) {
+      if (expiresAt <= now) this.relayedDiscordMessages.delete(text);
+    }
+
+    const normalized = this.normalizeRelayedMessage(value);
+    if (!normalized) return false;
+    return this.relayedDiscordMessages.has(normalized);
   }
 
   isCommand(message) {
@@ -1066,7 +1096,7 @@ class StateHandler extends eventHandler {
   }
 
   loadGuildMemberHistory() {
-    const defaultState = { version: 1, members: {} };
+    const defaultState = { version: 2, members: {} };
 
     try {
       if (!existsSync(this.guildMemberHistoryPath)) {
@@ -1080,12 +1110,30 @@ class StateHandler extends eventHandler {
         return defaultState;
       }
 
-      if (parsed.version === 1 && parsed.members && typeof parsed.members === "object") {
+      if (parsed.version === 2 && parsed.members && typeof parsed.members === "object") {
         return parsed;
       }
 
-      if (typeof parsed === "object") {
-        return { version: 1, members: parsed };
+      if (parsed.version === 1 && parsed.members && typeof parsed.members === "object") {
+        const migrated = { version: 2, members: {} };
+        for (const [uuid, member] of Object.entries(parsed.members || {})) {
+          const departure = member?.departure || null;
+          migrated.members[uuid] = {
+            uuid: String(uuid),
+            lastKnownUsername: member?.lastKnownUsername || null,
+            previousNames: Array.isArray(member?.previousNames) ? [...new Set(member.previousNames)] : [],
+            history: {
+              kicks: departure?.type === "kicked" ? [{ ...departure, type: "kicked" }] : [],
+              latestLeft: departure?.type === "left" ? { ...departure, type: "left" } : null
+            },
+            departure
+          };
+        }
+        return migrated;
+      }
+
+      if (typeof parsed === "object" && !parsed.version) {
+        return { version: 2, members: parsed };
       }
     } catch {
       // ignore file errors and continue with defaults
@@ -1106,6 +1154,20 @@ class StateHandler extends eventHandler {
     return String(uuid || "")
       .replaceAll("-", "")
       .toLowerCase();
+  }
+
+  getLatestDepartureFromMember(member) {
+    if (!member) return null;
+    const kicks = Array.isArray(member.history?.kicks) ? member.history.kicks : member.departure?.type === "kicked" ? [member.departure] : [];
+    const latestLeft = member.history?.latestLeft || (member.departure?.type === "left" ? member.departure : null);
+    const lastKick = kicks.length ? kicks[kicks.length - 1] : null;
+
+    if (lastKick && latestLeft) {
+      return new Date(lastKick.date).getTime() >= new Date(latestLeft.date).getTime() ? { ...lastKick, type: "kicked" } : { ...latestLeft, type: "left" };
+    }
+    if (lastKick) return { ...lastKick, type: "kicked" };
+    if (latestLeft) return { ...latestLeft, type: "left" };
+    return member.departure || null;
   }
 
   formatHistoryDate(date) {
@@ -1129,7 +1191,9 @@ class StateHandler extends eventHandler {
 
   extractKickDetails(message) {
     const normalized = replaceAllRanks(String(message || "").trim());
-    const match = normalized.match(/^(?<username>[A-Za-z0-9_]{3,16}) was kicked from the guild by (?<kickedBy>[A-Za-z0-9_]{3,16})(?: for (?<reason>.+?))?!?$/i);
+    const match = normalized.match(
+      /^(?<username>[A-Za-z0-9_]{3,16}) was kicked from the guild by (?<kickedBy>[A-Za-z0-9_]{3,16})(?: for (?<reason>.+?))?(?:!|\.|$)/i
+    );
 
     if (!match?.groups) {
       return null;
@@ -1138,7 +1202,7 @@ class StateHandler extends eventHandler {
     return {
       username: match.groups.username,
       kickedBy: match.groups.kickedBy,
-      reason: match.groups.reason ? match.groups.reason.trim().replace(/[.!]$/, "") : null
+      reason: match.groups.reason ? match.groups.reason.trim().replace(/[.!]$/, "") : "Not provided by Hypixel"
     };
   }
 
@@ -1169,16 +1233,34 @@ class StateHandler extends eventHandler {
 
       const dedupedPreviousNames = [...new Set(previousNames)];
 
+      const normalizedReason = type === "kicked" ? reason || "Not provided by Hypixel" : null;
+      const history = {
+        kicks: Array.isArray(existing.history?.kicks) ? [...existing.history.kicks] : [],
+        latestLeft: existing.history?.latestLeft || null
+      };
+
+      const departureEvent = {
+        type,
+        date: Date.now(),
+        kickedBy: type === "kicked" ? kickedBy : null,
+        reason: type === "kicked" ? normalizedReason : null
+      };
+
+      if (type === "kicked") {
+        history.kicks.push(departureEvent);
+      } else {
+        history.latestLeft = departureEvent;
+      }
+
       members[normalizedUuid] = {
         uuid: normalizedUuid,
         lastKnownUsername: username,
         previousNames: dedupedPreviousNames,
-        departure: {
-          type,
-          date: Date.now(),
-          kickedBy: type === "kicked" ? kickedBy : null,
-          reason: type === "kicked" ? reason : null
-        }
+        history,
+        departure: this.getLatestDepartureFromMember({
+          ...existing,
+          history
+        })
       };
 
       this.guildMemberHistory.members = members;
@@ -1206,16 +1288,26 @@ class StateHandler extends eventHandler {
 
       const normalizedUuid = this.normalizeUuid(uuid);
       const existing = this.guildMemberHistory.members?.[normalizedUuid];
-      if (!existing?.departure) {
+      if (!existing) {
         return null;
       }
 
       const oldUsername = existing.lastKnownUsername && existing.lastKnownUsername.toLowerCase() !== username.toLowerCase() ? existing.lastKnownUsername : null;
 
+      const latestDeparture = this.getLatestDepartureFromMember(existing);
+      if (!latestDeparture) {
+        return null;
+      }
+
+      const kickEvents = Array.isArray(existing.history?.kicks) ? existing.history.kicks : [];
+      const lastKick = kickEvents.length ? kickEvents[kickEvents.length - 1] : null;
       return {
         uuid: normalizedUuid,
         oldUsername,
-        departure: existing.departure
+        departure: latestDeparture,
+        latestDeparture,
+        kickCount: kickEvents.length,
+        lastKick
       };
     } catch {
       return null;
@@ -1228,11 +1320,13 @@ class StateHandler extends eventHandler {
         return;
       }
 
-      const departure = rejoinContext.departure;
+      const departure = rejoinContext.latestDeparture || rejoinContext.departure;
       const action = departure.type === "kicked" ? "got kicked" : "left";
       const oldUsernameText = rejoinContext.oldUsername ? ` (Old username: "${rejoinContext.oldUsername}")` : "";
-      const kickSuffix = departure.type === "kicked" ? ` for: "${departure.reason || "Unknown"}" by "${departure.kickedBy || "Unknown"}"` : "";
-      const message = `User "${username}" was part of the guild before${oldUsernameText}. They ${action} on "${this.formatHistoryDate(departure.date)}"${kickSuffix}`;
+      const kickSuffix = departure.type === "kicked" ? ` for: "${departure.reason || "Not provided by Hypixel"}" by "${departure.kickedBy || "Unknown"}"` : "";
+      const priorKickSuffix =
+        departure.type === "left" && Number(rejoinContext.kickCount || 0) > 0 ? `. Prior kicks recorded: ${rejoinContext.kickCount}` : "";
+      const message = `User "${username}" was part of the guild before${oldUsernameText}. They ${action} on "${this.formatHistoryDate(departure.date)}"${kickSuffix}${priorKickSuffix}`;
 
       await this.sendGuildCommandWithRateLimitRetry(`/oc ${message}`, {
         delayMs: 1800,

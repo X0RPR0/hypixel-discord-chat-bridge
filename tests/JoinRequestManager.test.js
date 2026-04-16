@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { MessageFlags } = require("discord.js");
 const { describe, it, expect, beforeAll, afterAll, beforeEach, jest: jestGlobals } = require("@jest/globals");
 
 const configPath = path.resolve(process.cwd(), "config.json");
@@ -150,5 +151,23 @@ describe("JoinRequestManager", () => {
     expect(manager.state.requests[0].status).toBe("pending");
     expect(manager.state.requests[0].reinviteCount).toBe(2);
     expect(new Date(manager.state.requests[0].expiresAt).getTime()).toBeGreaterThan(new Date(oldExpiry).getTime());
+  });
+
+  it("builds components v2 request payload with warnings", async () => {
+    manager.getGuildHistoryForRequest = jestGlobals.fn(async () => null);
+    const payload = await manager.buildRequestMessagePayload({
+      requestId: "req-3",
+      username: "Tester",
+      source: "ingame",
+      status: "expired",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+      reinviteCount: 1,
+      actions: [],
+      warnings: ["Stats unavailable (requirements): Hypixel API key missing, invalid, or outdated."]
+    });
+
+    expect(Array.isArray(payload.components)).toBe(true);
+    expect(Number(payload.flags) & Number(MessageFlags.IsComponentsV2)).toBe(Number(MessageFlags.IsComponentsV2));
   });
 });

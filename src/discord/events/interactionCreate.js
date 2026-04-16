@@ -2,6 +2,7 @@ const { isLinkedMember, isGuildMember, isVerifiedMember } = require("../../contr
 const HypixelDiscordChatBridgeError = require("../../contracts/errorHandler.js");
 const { ErrorEmbed, SuccessEmbed } = require("../../contracts/embedHandler.js");
 const { JoinRequestManager, PANEL_BUTTON_ID, PANEL_VERIFY_BUTTON_ID, PANEL_MODAL_ID, PANEL_VERIFY_MODAL_ID } = require("../other/joinRequestManager.js");
+const { ManualLinkRequestService } = require("../other/manualLinkRequestService.js");
 const giveawayService = require("../other/giveawayService.js");
 // eslint-disable-next-line no-unused-vars
 const { CommandInteraction, Events } = require("discord.js");
@@ -172,6 +173,19 @@ module.exports = {
           }
 
           return interaction.client.joinRequestManager.handleModeratorAction({
+            action: parsed.action,
+            requestId: parsed.requestId,
+            interaction
+          });
+        }
+
+        if (ManualLinkRequestService.isManualLinkComponent(interaction.customId)) {
+          const parsed = ManualLinkRequestService.parseActionCustomId(interaction.customId);
+          if (!parsed) {
+            return interaction.reply({ content: "Invalid manual link action.", ephemeral: true });
+          }
+
+          return interaction.client.manualLinkRequestService.handleComponent({
             action: parsed.action,
             requestId: parsed.requestId,
             interaction
