@@ -86,6 +86,10 @@ class MinecraftManager extends CommunicationBridge {
       message = message.replace(username, `${username} replying to ${replyingTo}`);
     }
 
+    if (this.chatHandler?.rememberRelayedDiscordMessage) {
+      this.chatHandler.rememberRelayedDiscordMessage(message);
+    }
+
     let successfullySent = false;
     const messageListener = (receivedMessage) => {
       receivedMessage = receivedMessage.toString();
