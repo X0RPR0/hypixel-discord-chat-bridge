@@ -963,15 +963,18 @@ class JoinRequestManager {
       }
     }
 
+    if (mentionText) {
+      warnings.unshift(`${mentionText} Guild join request for **${request.username}**`);
+    }
+
     const panel = this.buildRequestPanel(request, {
       warnings,
       guildHistoryLines
     });
 
     return {
-      content: [mentionText, `Guild join request for **${request.username}**`].filter(Boolean).join("\n"),
       ...panelPayload(panel),
-      flags: MessageFlags.IsComponentsV2
+      allowedMentions: { parse: ["users", "roles", "everyone"] }
     };
   }
 
