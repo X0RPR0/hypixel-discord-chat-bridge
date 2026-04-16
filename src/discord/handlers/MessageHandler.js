@@ -56,13 +56,13 @@ class MessageHandler {
       const officerChannelId = String(config.discord.channels.officerChannel || "");
       const isGuildBridgeChannel = message.channel.id === guildChatChannelId;
       const isBridgeChatChannel = message.channel.id === guildChatChannelId || message.channel.id === officerChannelId;
-      if (isGuildBridgeChannel && !this.isLinkedBridgeUser(message.author.id)) {
+      if (isBridgeChatChannel && !this.isLinkedBridgeUser(message.author.id)) {
         await message.react("\u274C").catch(() => {});
         await this.sendTemporaryNotice(message, "Only linked users can use chat bridge. Use `/verify`.");
         return;
       }
 
-      if (isBridgeChatChannel && this.isGuildMutedFromBridge(message.author.id)) {
+      if (isBridgeChatChannel && this.isGuildMutedFromBridge(message)) {
         await message.react("\u{1F507}").catch(() => {});
         await this.sendTemporaryNotice(message, "You are currently muted in guild chat and cannot use the bridge.");
         return;
@@ -243,10 +243,34 @@ class MessageHandler {
     }
   }
 
-  isGuildMutedFromBridge(discordId) {
-    const uuid = String(getUuidByDiscordId(discordId) || "").toLowerCase();
-    if (!uuid) return false;
-    return this.getGuildMutedUsersSet().has(uuid);
+  normalizeMutedKey(value) {
+    return String(value || "")
+      .trim()
+      .replace(/[^\w]/g, "")
+      .toLowerCase();
+  }
+
+  isGuildMutedFromBridge(message) {
+    const mutedSet = this.getGuildMutedUsersSet();
+    if (mutedSet.size === 0) return false;
+
+    const discordId = message?.author?.id;
+    const uuid = this.normalizeMutedKey(getUuidByDiscordId(discordId));
+    if (uuid && mutedSet.has(uuid)) {
+      return true;
+    }
+
+    const displayName = this.normalizeMutedKey(message?.member?.displayName);
+    if (displayName && mutedSet.has(displayName)) {
+      return true;
+    }
+
+    const username = this.normalizeMutedKey(message?.author?.username);
+    if (username && mutedSet.has(username)) {
+      return true;
+    }
+
+    return false;
   }
 
   isLinkedBridgeUser(discordId) {

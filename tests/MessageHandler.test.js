@@ -37,6 +37,22 @@ describe("MessageHandler bridge gating helpers", () => {
   it("detects guild-muted users from stored uuid set", () => {
     getUuidByDiscordId.mockReturnValueOnce("abc");
     carryDatabase.getBinding.mockReturnValueOnce(JSON.stringify(["abc"]));
-    expect(handler.isGuildMutedFromBridge("1")).toBe(true);
+    expect(
+      handler.isGuildMutedFromBridge({
+        author: { id: "1", username: "UserA" },
+        member: { displayName: "UserA" }
+      })
+    ).toBe(true);
+  });
+
+  it("detects guild-muted users from stored normalized username", () => {
+    getUuidByDiscordId.mockReturnValueOnce(null);
+    carryDatabase.getBinding.mockReturnValueOnce(JSON.stringify(["jamesien"]));
+    expect(
+      handler.isGuildMutedFromBridge({
+        author: { id: "1", username: "JaMeSiEn" },
+        member: { displayName: "Jamesien" }
+      })
+    ).toBe(true);
   });
 });
