@@ -24,10 +24,12 @@ function getRankupConfig() {
       { minSkyblockLevel: 0, guildRank: "Shadow" }
     ],
     allowedInvokerGuildRanks: ["Guild Master", "Slayer"],
-    protectedGuildRanks: ["Guild Master", "Slayer"]
+    protectedGuildRanks: ["Guild Master", "Slayer", "Devourer"]
   };
 
   const rankup = config.rankup || {};
+  const configuredProtectedRanks = Array.isArray(rankup.protectedGuildRanks) ? rankup.protectedGuildRanks : [];
+  const protectedGuildRanks = [...new Set([...defaults.protectedGuildRanks, ...configuredProtectedRanks])];
   return {
     enabled: rankup.enabled ?? defaults.enabled,
     manual: {
@@ -42,7 +44,7 @@ function getRankupConfig() {
     tiers: Array.isArray(rankup.tiers) && rankup.tiers.length > 0 ? rankup.tiers : defaults.tiers,
     allowedInvokerGuildRanks:
       Array.isArray(rankup.allowedInvokerGuildRanks) && rankup.allowedInvokerGuildRanks.length > 0 ? rankup.allowedInvokerGuildRanks : defaults.allowedInvokerGuildRanks,
-    protectedGuildRanks: Array.isArray(rankup.protectedGuildRanks) && rankup.protectedGuildRanks.length > 0 ? rankup.protectedGuildRanks : defaults.protectedGuildRanks
+    protectedGuildRanks
   };
 }
 
@@ -113,11 +115,19 @@ async function getInvokerGuildRankByDiscordId(discordId, guild) {
 }
 
 function isAllowedInvokerRank(rank) {
-  return getRankupConfig().allowedInvokerGuildRanks.includes(rank);
+  const normalizedRank = String(rank || "").trim().toLowerCase();
+  if (!normalizedRank) return false;
+  return getRankupConfig()
+    .allowedInvokerGuildRanks.map((item) => String(item || "").trim().toLowerCase())
+    .includes(normalizedRank);
 }
 
 function isProtectedGuildRank(rank) {
-  return getRankupConfig().protectedGuildRanks.includes(rank);
+  const normalizedRank = String(rank || "").trim().toLowerCase();
+  if (!normalizedRank) return false;
+  return getRankupConfig()
+    .protectedGuildRanks.map((item) => String(item || "").trim().toLowerCase())
+    .includes(normalizedRank);
 }
 
 async function applyGuildRank(username, targetRank) {
